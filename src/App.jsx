@@ -607,6 +607,16 @@ const AIAssistant = () => {
   );
 };
 
+// ── HHT Logo (Heart & Ampersand) ─────────────────────────────────────────────
+
+const HHTLogo = ({ size = 32 }) => (
+  <svg width={size} height={size} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="200" height="200" rx="8" fill="#000"/>
+    <path d="M100 170C100 170 30 125 30 80C30 55 50 38 72 38C86 38 96 46 100 55C104 46 114 38 128 38C150 38 170 55 170 80C170 125 100 170 100 170Z" fill="white"/>
+    <text x="100" y="128" textAnchor="middle" fontFamily="Georgia, serif" fontSize="90" fontWeight="bold" fill="black">&amp;</text>
+  </svg>
+);
+
 // ── Main App ───────────────────────────────────────────────────────────────────
 
 const navItems = [
@@ -645,7 +655,7 @@ export default function HHTOperationsPlatform() {
         {/* Logo */}
         <div style={{ padding: "24px 20px 20px", borderBottom: `1px solid ${COLORS.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 6, background: `linear-gradient(135deg, ${COLORS.accent}, rgba(110,193,228,0.5))`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 900, color: "#000" }}>H</div>
+            <HHTLogo size={36} />
             <div>
               <div style={{ color: COLORS.text, fontSize: 13, fontWeight: 800, letterSpacing: "0.5px" }}>HH&T</div>
               <div style={{ color: COLORS.textMuted, fontSize: 9, fontWeight: 500, letterSpacing: "1px", textTransform: "uppercase" }}>Operations</div>
