@@ -78,7 +78,7 @@ const subscriptions = [
 ];
 
 const teamMembers = [
-  { name: "James", role: "Director / BD", billableHrs: 22, nonBillableHrs: 18, utilisation: 55 },
+  { name: "Joe Stokoe", role: "Director / BD", billableHrs: 22, nonBillableHrs: 18, utilisation: 55 },
   { name: "Seb", role: "Creative Director", billableHrs: 30, nonBillableHrs: 10, utilisation: 75 },
   { name: "Emily", role: "Events Manager", billableHrs: 28, nonBillableHrs: 12, utilisation: 70 },
   { name: "Jason", role: "Operations", billableHrs: 15, nonBillableHrs: 25, utilisation: 38 },
@@ -457,7 +457,7 @@ const TimeTracking = () => {
         <div style={{ background: COLORS.accentDim, border: `1px solid rgba(110,193,228,0.2)`, borderRadius: 6, padding: "14px 18px" }}>
           <div style={{ color: COLORS.accent, fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Recommendation</div>
           <div style={{ color: COLORS.textMuted, fontSize: 12, lineHeight: 1.5 }}>
-            Jason and James have 43 combined non-billable hours this week. Redirecting 50% of those hours to venue outreach and cold prospecting could generate 3-5 qualified leads based on previous conversion rates.
+            Jason and Joe have 43 combined non-billable hours this week. Redirecting 50% of those hours to venue outreach and cold prospecting could generate 3-5 qualified leads based on previous conversion rates.
           </div>
         </div>
       </div>
