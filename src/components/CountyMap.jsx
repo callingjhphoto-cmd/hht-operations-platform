@@ -83,7 +83,7 @@ const F = {
 
 // ── SVG dimensions ──
 const W = 520;
-const H = 460;
+const H = 380;
 
 export default function CountyMap({ leads, onCountyClick }) {
   const [hover, setHover] = useState(null);
@@ -289,7 +289,37 @@ export default function CountyMap({ leads, onCountyClick }) {
               const cx = g.xs.reduce((a, b) => a + b, 0) / g.xs.length;
               const cy = g.ys.reduce((a, b) => a + b, 0) / g.ys.length;
               const count = countByCounty[name] || 0;
-              const fontSize = name === "Isle of Wight" ? 5 : name === "Greater London" ? 7 : 7;
+              const isLondon = name === "Greater London";
+              const fontSize = name === "Isle of Wight" ? 5 : 7;
+
+              // London gets white text + background pill to stand out on dark fill
+              if (isLondon) {
+                const pw = 38, ph = 16;
+                return (
+                  <g key={"lbl-" + name} pointerEvents="none">
+                    <rect
+                      x={cx - pw / 2} y={cy - ph / 2 - 1}
+                      width={pw} height={ph} rx={4}
+                      fill="rgba(255,255,255,0.88)"
+                    />
+                    <text
+                      x={cx} y={cy + 1}
+                      textAnchor="middle" fontSize={6}
+                      fontFamily={F.sans} fontWeight="700" fill={C.accent}
+                    >
+                      London
+                    </text>
+                    <text
+                      x={cx} y={cy + 8}
+                      textAnchor="middle" fontSize={5.5}
+                      fontFamily={F.sans} fontWeight="700" fill={C.accent}
+                    >
+                      {count}
+                    </text>
+                  </g>
+                );
+              }
+
               return (
                 <g key={"lbl-" + name} pointerEvents="none">
                   <text

@@ -6,7 +6,7 @@
 const STORAGE_KEYS = {
   leads: 'hht_leads',
   activities: 'hht_activities',
-  initialized: 'hht_initialized_v2',
+  initialized: 'hht_initialized_v3',
 };
 
 // ── UUID generator ──
