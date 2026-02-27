@@ -1,22 +1,44 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { geoPath, geoMercator } from "d3-geo";
-import * as topojson from "topojson-client";
 
 // ═══════════════════════════════════════════════════════════════
 // HH&T Interactive County Map — England
-// Real geographic boundaries from ONS ceremonial counties data
+// Real geographic boundaries from ONS Open Geography Portal
+// Counties & Unitary Authorities (Dec 2022) — BUC (ultra-generalised)
 // Rendered with d3-geo Mercator projection
 // Hover for county name + lead count, click to filter
 // ═══════════════════════════════════════════════════════════════
 
-const TOPO_URL =
-  "https://cdn.jsdelivr.net/gh/martinjc/UK-GeoJSON@master/json/eng/topo_cer.json";
+const GEO_URL =
+  "https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Counties_and_Unitary_Authorities_December_2022_EN_BUC/FeatureServer/0/query?where=1%3D1&outFields=CTYUA22NM&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=200";
 
-// ── Map GeoJSON county names → venue-data county names ──
+// ── Map ONS names → venue-data county names ──
+// ONS data includes London boroughs, unitary authorities etc.
+// We group them into the ceremonial counties our venue data uses.
+const LONDON_BOROUGHS = new Set([
+  "Barking and Dagenham","Barnet","Bexley","Brent","Bromley","Camden",
+  "City of London","Croydon","Ealing","Enfield","Greenwich","Hackney",
+  "Hammersmith and Fulham","Haringey","Harrow","Havering","Hillingdon",
+  "Hounslow","Islington","Kensington and Chelsea","Kingston upon Thames",
+  "Lambeth","Lewisham","Merton","Newham","Redbridge","Richmond upon Thames",
+  "Southwark","Sutton","Tower Hamlets","Waltham Forest","Wandsworth",
+  "Westminster",
+]);
+
 const NAME_MAP = {
-  "City of London": "Greater London",
   "Herefordshire, County of": "Herefordshire",
   "Bristol, City of": "Bristol",
+  // Bedfordshire unitaries
+  "Bedford": "Bedfordshire",
+  "Central Bedfordshire": "Bedfordshire",
+  "Luton": "Bedfordshire",
+  // Berkshire unitaries
+  "Bracknell Forest": "Berkshire",
+  "Reading": "Berkshire",
+  "Slough": "Berkshire",
+  "West Berkshire": "Berkshire",
+  "Windsor and Maidenhead": "Berkshire",
+  "Wokingham": "Berkshire",
 };
 
 // ── Short display names for map labels ──
@@ -69,19 +91,16 @@ export default function CountyMap({ leads, onCountyClick }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Fetch TopoJSON on mount
+  // Fetch GeoJSON from ONS Open Geography Portal on mount
   useEffect(() => {
     let cancelled = false;
-    fetch(TOPO_URL)
+    fetch(GEO_URL)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
       })
-      .then((topo) => {
+      .then((geo) => {
         if (cancelled) return;
-        // Find the first object key in the TopoJSON
-        const objKey = Object.keys(topo.objects)[0];
-        const geo = topojson.feature(topo, topo.objects[objKey]);
         setGeoData(geo);
         setLoading(false);
       })
@@ -118,16 +137,9 @@ export default function CountyMap({ leads, onCountyClick }) {
     const pg = geoPath(projection);
 
     const feats = geoData.features.map((f) => {
-      // Try multiple property keys for the county name
-      const rawName =
-        f.properties.CTYUA13NM ||
-        f.properties.NAME ||
-        f.properties.CTYUA17NM ||
-        f.properties.EER13NM ||
-        f.properties.name ||
-        Object.values(f.properties).find((v) => typeof v === "string" && v.length > 2) ||
-        "Unknown";
-      const countyName = NAME_MAP[rawName] || rawName;
+      // ONS Counties & Unitary Authorities use CTYUA22NM
+      const rawName = f.properties.CTYUA22NM || "Unknown";
+      const countyName = LONDON_BOROUGHS.has(rawName) ? "Greater London" : (NAME_MAP[rawName] || rawName);
       const centroid = pg.centroid(f);
       return {
         feature: f,
