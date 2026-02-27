@@ -1,128 +1,51 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { geoPath, geoMercator } from "d3-geo";
+import * as topojson from "topojson-client";
 
 // ═══════════════════════════════════════════════════════════════
 // HH&T Interactive County Map — England
-// Generated from real lat/long boundary coordinates
-// Equirectangular projection, cos(51.3°) correction
+// Real geographic boundaries from ONS ceremonial counties data
+// Rendered with d3-geo Mercator projection
 // Hover for county name + lead count, click to filter
 // ═══════════════════════════════════════════════════════════════
 
-const COUNTY_DATA = {
-  "Cornwall": {
-    d: "M 151.2,471.8 L 136.2,473.9 L 124.6,488.8 L 117.7,501.5 L 106.2,520.6 L 99.2,533.4 L 90.0,548.3 L 86.5,558.9 L 80.8,573.7 L 68.1,590.7 L 49.6,601.4 L 42.7,605.6 L 35.8,618.4 L 25.4,626.9 L 15.0,633.3 L 28.8,639.6 L 49.6,648.1 L 72.7,656.6 L 86.5,643.9 L 91.2,631.1 L 91.2,618.4 L 100.4,609.9 L 113.1,597.1 L 123.5,590.7 L 133.8,584.4 L 140.8,578.0 L 155.8,573.7 L 167.3,571.6 L 178.8,569.5 L 189.2,567.4 L 189.2,558.9 L 186.9,546.1 L 185.8,537.6 L 181.2,527.0 L 176.5,516.4 L 170.8,505.7 L 166.2,495.1 L 160.4,484.5 L 151.2,471.8 Z",
-    cx: 115.9, cy: 565.9, short: "Cornwall"
-  },
-  "Devon": {
-    d: "M 189.2,567.4 L 201.9,569.5 L 215.8,573.7 L 230.8,582.2 L 238.8,588.6 L 250.4,592.9 L 259.6,588.6 L 265.4,578.0 L 267.7,569.5 L 268.8,556.8 L 270.0,550.4 L 275.8,546.1 L 278.1,537.6 L 278.1,531.3 L 280.4,524.9 L 282.7,520.6 L 285.0,516.4 L 291.9,516.4 L 298.8,514.2 L 303.5,507.9 L 311.5,503.6 L 319.6,497.2 L 326.5,495.1 L 330.0,488.8 L 328.8,480.3 L 326.5,469.6 L 324.2,461.1 L 321.9,452.6 L 318.5,444.1 L 315.0,435.6 L 310.4,427.1 L 306.9,420.7 L 301.2,414.4 L 293.1,410.1 L 285.0,408.0 L 278.1,401.6 L 271.2,395.3 L 259.6,391.0 L 245.8,386.8 L 234.2,386.8 L 221.5,388.9 L 213.5,393.1 L 205.4,397.4 L 199.6,405.9 L 191.5,414.4 L 188.1,422.9 L 181.2,429.2 L 171.9,431.4 L 163.8,431.4 L 155.8,435.6 L 151.2,448.4 L 151.2,461.1 L 151.2,471.8 L 160.4,484.5 L 166.2,495.1 L 170.8,505.7 L 176.5,516.4 L 181.2,527.0 L 185.8,537.6 L 186.9,546.1 L 189.2,558.9 L 189.2,567.4 Z",
-    cx: 245.0, cy: 485.0, short: "Devon"
-  },
-  "Somerset": {
-    d: "M 285.0,408.0 L 293.1,410.1 L 301.2,414.4 L 306.9,420.7 L 310.4,427.1 L 315.0,435.6 L 318.5,444.1 L 321.9,452.6 L 331.2,452.6 L 340.4,450.5 L 349.6,448.4 L 361.2,442.0 L 370.4,437.7 L 379.6,433.5 L 388.8,425.0 L 398.1,418.6 L 405.0,410.1 L 409.6,401.6 L 411.9,393.1 L 414.2,386.8 L 411.9,376.1 L 409.6,367.6 L 403.8,361.2 L 398.1,354.9 L 386.5,352.7 L 377.3,357.0 L 369.2,365.5 L 361.2,371.9 L 349.6,378.2 L 340.4,380.4 L 331.2,384.6 L 323.1,388.9 L 315.0,393.1 L 305.8,395.3 L 296.5,399.5 L 288.5,403.8 L 285.0,408.0 Z",
-    cx: 350.4, cy: 404.1, short: "Somerset"
-  },
-  "Dorset": {
-    d: "M 326.5,495.1 L 330.0,488.8 L 328.8,480.3 L 326.5,469.6 L 324.2,461.1 L 321.9,452.6 L 331.2,452.6 L 340.4,450.5 L 349.6,448.4 L 361.2,442.0 L 370.4,437.7 L 379.6,433.5 L 393.5,433.5 L 407.3,431.4 L 421.2,427.1 L 432.7,425.0 L 444.2,422.9 L 453.5,422.9 L 458.1,431.4 L 461.5,439.9 L 465.0,450.5 L 467.3,461.1 L 469.6,467.5 L 469.6,476.0 L 468.5,482.4 L 465.0,488.8 L 455.8,495.1 L 447.7,497.2 L 440.8,499.4 L 435.0,503.6 L 428.1,505.7 L 421.2,510.0 L 414.2,516.4 L 405.0,516.4 L 395.8,512.1 L 391.2,510.0 L 383.1,512.1 L 375.0,516.4 L 363.5,516.4 L 354.2,514.2 L 347.3,505.7 L 340.4,503.6 L 334.6,499.4 L 326.5,495.1 Z",
-    cx: 396.1, cy: 475.0, short: "Dorset"
-  },
-  "Wiltshire": {
-    d: "M 453.5,422.9 L 444.2,422.9 L 432.7,425.0 L 421.2,427.1 L 407.3,431.4 L 393.5,433.5 L 379.6,433.5 L 388.8,425.0 L 398.1,418.6 L 405.0,410.1 L 409.6,401.6 L 411.9,393.1 L 414.2,386.8 L 418.8,371.9 L 423.5,359.1 L 428.1,350.6 L 432.7,342.1 L 439.6,333.6 L 444.2,325.1 L 448.8,320.9 L 458.1,316.6 L 467.3,312.4 L 476.5,308.1 L 485.8,308.1 L 495.0,310.2 L 499.6,318.8 L 501.9,329.4 L 501.9,337.9 L 499.6,346.4 L 497.3,359.1 L 495.0,371.9 L 490.4,384.6 L 483.5,397.4 L 476.5,405.9 L 469.6,414.4 L 462.7,422.9 L 453.5,422.9 Z",
-    cx: 448.9, cy: 375.7, short: "Wilts"
-  },
-  "Hampshire": {
-    d: "M 468.5,482.4 L 469.6,476.0 L 469.6,467.5 L 467.3,461.1 L 465.0,450.5 L 461.5,439.9 L 458.1,431.4 L 453.5,422.9 L 462.7,422.9 L 469.6,414.4 L 476.5,405.9 L 483.5,397.4 L 490.4,384.6 L 495.0,371.9 L 497.3,359.1 L 508.8,354.9 L 520.4,359.1 L 531.9,363.4 L 543.5,365.5 L 555.0,369.7 L 566.5,371.9 L 573.5,380.4 L 578.1,388.9 L 582.7,397.4 L 585.0,405.9 L 582.7,414.4 L 578.1,422.9 L 575.8,431.4 L 573.5,439.9 L 571.2,448.4 L 568.8,461.1 L 561.9,469.6 L 552.7,473.9 L 545.8,478.1 L 538.8,482.4 L 541.2,478.1 L 548.1,473.9 L 536.5,471.8 L 527.3,473.9 L 520.4,478.1 L 513.5,482.4 L 504.2,484.5 L 497.3,486.6 L 488.1,488.8 L 481.2,490.9 L 474.2,486.6 L 468.5,482.4 Z",
-    cx: 522.0, cy: 432.0, short: "Hants"
-  },
-  "Isle of Wight": {
-    d: "M 499.6,486.6 L 508.8,490.9 L 518.1,495.1 L 527.3,499.4 L 538.8,503.6 L 548.1,505.7 L 552.7,503.6 L 550.4,499.4 L 543.5,495.1 L 536.5,493.0 L 527.3,490.9 L 518.1,490.9 L 508.8,488.8 L 499.6,486.6 Z",
-    cx: 527.0, cy: 495.0, short: "IoW"
-  },
-  "Gloucestershire": {
-    d: "M 448.8,320.9 L 444.2,325.1 L 439.6,333.6 L 432.7,342.1 L 428.1,350.6 L 423.5,359.1 L 418.8,371.9 L 411.9,376.1 L 409.6,367.6 L 403.8,361.2 L 398.1,354.9 L 388.8,346.4 L 381.9,333.6 L 375.0,323.0 L 370.4,312.4 L 368.1,303.9 L 365.8,295.4 L 368.1,286.9 L 375.0,278.4 L 381.9,269.9 L 388.8,261.4 L 395.8,252.9 L 402.7,244.4 L 411.9,235.9 L 421.2,227.4 L 430.4,218.9 L 439.6,210.4 L 448.8,206.1 L 458.1,201.9 L 467.3,197.6 L 476.5,193.4 L 485.8,193.4 L 495.0,201.9 L 504.2,210.4 L 511.2,218.9 L 504.2,227.4 L 497.3,235.9 L 490.4,244.4 L 485.8,252.9 L 481.2,261.4 L 476.5,269.9 L 476.5,282.6 L 474.2,291.1 L 469.6,299.6 L 465.0,308.1 L 458.1,312.4 L 453.5,316.6 L 448.8,320.9 Z",
-    cx: 436.5, cy: 281.5, short: "Glos"
-  },
-  "Herefordshire": {
-    d: "M 402.7,244.4 L 395.8,252.9 L 388.8,261.4 L 381.9,269.9 L 375.0,278.4 L 368.1,286.9 L 356.5,282.6 L 345.0,274.1 L 335.8,265.6 L 328.8,257.1 L 319.6,248.6 L 317.3,240.1 L 319.6,231.6 L 324.2,223.1 L 328.8,214.6 L 333.5,206.1 L 340.4,197.6 L 347.3,189.1 L 354.2,180.6 L 361.2,172.1 L 372.7,176.4 L 381.9,184.9 L 391.2,193.4 L 398.1,201.9 L 402.7,210.4 L 407.3,218.9 L 409.6,227.4 L 411.9,235.9 L 402.7,244.4 Z",
-    cx: 365.6, cy: 230.0, short: "Herefs"
-  },
-  "Worcestershire": {
-    d: "M 411.9,235.9 L 409.6,227.4 L 407.3,218.9 L 402.7,210.4 L 398.1,201.9 L 391.2,193.4 L 381.9,184.9 L 372.7,176.4 L 377.3,167.9 L 384.2,159.4 L 391.2,150.9 L 402.7,146.6 L 414.2,142.4 L 425.8,146.6 L 435.0,150.9 L 441.9,159.4 L 446.5,167.9 L 451.2,176.4 L 455.8,184.9 L 460.4,193.4 L 458.1,201.9 L 448.8,206.1 L 439.6,210.4 L 430.4,218.9 L 421.2,227.4 L 411.9,235.9 Z",
-    cx: 418.1, cy: 188.3, short: "Worcs"
-  },
-  "Shropshire": {
-    d: "M 333.5,206.1 L 340.4,197.6 L 347.3,189.1 L 354.2,180.6 L 361.2,172.1 L 351.9,163.6 L 342.7,155.1 L 333.5,146.6 L 326.5,138.1 L 321.9,129.6 L 319.6,121.1 L 319.6,112.6 L 324.2,104.1 L 331.2,95.6 L 338.1,87.1 L 347.3,78.6 L 356.5,70.1 L 365.8,61.6 L 377.3,57.4 L 388.8,61.6 L 400.4,65.9 L 409.6,70.1 L 416.5,78.6 L 421.2,87.1 L 423.5,95.6 L 425.8,104.1 L 423.5,112.6 L 418.8,121.1 L 411.9,129.6 L 405.0,138.1 L 398.1,146.6 L 391.2,150.9 L 384.2,159.4 L 377.3,167.9 L 372.7,176.4 L 365.8,184.9 L 358.8,193.4 L 349.6,201.9 L 342.7,206.1 L 333.5,206.1 Z",
-    cx: 367.8, cy: 133.1, short: "Shrops"
-  },
-  "Warwickshire": {
-    d: "M 460.4,193.4 L 455.8,184.9 L 451.2,176.4 L 446.5,167.9 L 441.9,159.4 L 451.2,150.9 L 460.4,142.4 L 469.6,138.1 L 481.2,133.9 L 492.7,129.6 L 504.2,129.6 L 515.8,133.9 L 525.0,138.1 L 531.9,146.6 L 538.8,155.1 L 543.5,163.6 L 545.8,172.1 L 543.5,180.6 L 538.8,189.1 L 534.2,197.6 L 527.3,201.9 L 518.1,206.1 L 508.8,201.9 L 499.6,197.6 L 485.8,193.4 L 476.5,193.4 L 467.3,197.6 L 460.4,193.4 Z",
-    cx: 495.6, cy: 170.3, short: "Warks"
-  },
-  "Northamptonshire": {
-    d: "M 548.1,214.6 L 552.7,223.1 L 559.6,231.6 L 571.2,231.6 L 575.8,223.1 L 580.4,218.9 L 587.3,214.6 L 596.5,210.4 L 605.8,206.1 L 612.7,201.9 L 619.6,197.6 L 626.5,189.1 L 633.5,180.6 L 638.1,172.1 L 642.7,163.6 L 645.0,155.1 L 640.4,146.6 L 633.5,138.1 L 626.5,129.6 L 617.3,121.1 L 610.4,112.6 L 601.2,108.4 L 591.9,108.4 L 580.4,112.6 L 571.2,116.9 L 561.9,121.1 L 555.0,129.6 L 548.1,138.1 L 538.8,138.1 L 531.9,146.6 L 538.8,155.1 L 543.5,163.6 L 545.8,172.1 L 543.5,180.6 L 538.8,189.1 L 534.2,197.6 L 543.5,206.1 L 548.1,214.6 Z",
-    cx: 582.6, cy: 170.5, short: "Northants"
-  },
-  "Oxfordshire": {
-    d: "M 499.6,318.8 L 508.8,312.4 L 520.4,308.1 L 531.9,303.9 L 543.5,301.7 L 555.0,303.9 L 548.1,299.6 L 543.5,291.1 L 541.2,282.6 L 543.5,274.1 L 548.1,265.6 L 552.7,257.1 L 557.3,248.6 L 564.2,240.1 L 559.6,231.6 L 552.7,223.1 L 548.1,214.6 L 543.5,206.1 L 534.2,201.9 L 525.0,206.1 L 518.1,210.4 L 511.2,218.9 L 504.2,227.4 L 497.3,235.9 L 490.4,244.4 L 485.8,252.9 L 481.2,261.4 L 476.5,269.9 L 476.5,282.6 L 478.8,291.1 L 483.5,299.6 L 485.8,308.1 L 476.5,308.1 L 495.0,310.2 L 499.6,318.8 Z",
-    cx: 519.5, cy: 266.6, short: "Oxon"
-  },
-  "Buckinghamshire": {
-    d: "M 596.5,333.6 L 587.3,329.4 L 580.4,325.1 L 573.5,316.6 L 564.2,308.1 L 555.0,303.9 L 548.1,299.6 L 543.5,291.1 L 541.2,282.6 L 543.5,274.1 L 548.1,265.6 L 552.7,257.1 L 557.3,248.6 L 564.2,240.1 L 571.2,231.6 L 575.8,223.1 L 580.4,218.9 L 587.3,214.6 L 596.5,218.9 L 605.8,223.1 L 612.7,231.6 L 617.3,240.1 L 621.9,248.6 L 621.9,257.1 L 617.3,265.6 L 612.7,274.1 L 610.4,282.6 L 610.4,291.1 L 612.7,299.6 L 617.3,308.1 L 626.5,316.6 L 624.2,320.9 L 619.6,325.1 L 615.0,329.4 L 610.4,333.6 L 601.2,337.9 L 596.5,333.6 Z",
-    cx: 589.7, cy: 281.1, short: "Bucks"
-  },
-  "Berkshire": {
-    d: "M 566.5,371.9 L 555.0,369.7 L 543.5,365.5 L 531.9,363.4 L 520.4,359.1 L 508.8,354.9 L 499.6,346.4 L 501.9,337.9 L 501.9,329.4 L 499.6,318.8 L 508.8,312.4 L 520.4,308.1 L 531.9,303.9 L 543.5,301.7 L 555.0,303.9 L 564.2,308.1 L 573.5,316.6 L 580.4,325.1 L 587.3,329.4 L 596.5,333.6 L 601.2,337.9 L 605.8,342.1 L 610.4,346.4 L 596.5,350.6 L 591.9,354.9 L 587.3,363.4 L 580.4,371.9 L 573.5,380.4 L 566.5,371.9 Z",
-    cx: 555.3, cy: 340.7, short: "Berks"
-  },
-  "Bedfordshire": {
-    d: "M 596.5,218.9 L 605.8,223.1 L 612.7,231.6 L 617.3,240.1 L 624.2,244.4 L 631.2,240.1 L 638.1,235.9 L 645.0,231.6 L 651.9,227.4 L 656.5,218.9 L 658.8,210.4 L 661.2,201.9 L 658.8,193.4 L 654.2,184.9 L 645.0,189.1 L 635.8,193.4 L 626.5,197.6 L 619.6,197.6 L 612.7,201.9 L 605.8,206.1 L 596.5,210.4 L 596.5,218.9 Z",
-    cx: 629.6, cy: 214.4, short: "Beds"
-  },
-  "Hertfordshire": {
-    d: "M 642.7,289.0 L 633.5,291.1 L 628.8,295.4 L 624.2,299.6 L 621.9,308.1 L 624.2,312.4 L 626.5,316.6 L 617.3,308.1 L 612.7,299.6 L 610.4,291.1 L 610.4,282.6 L 612.7,274.1 L 617.3,265.6 L 621.9,257.1 L 628.8,248.6 L 635.8,244.4 L 642.7,240.1 L 651.9,235.9 L 661.2,233.7 L 670.4,235.9 L 677.3,240.1 L 681.9,248.6 L 684.2,257.1 L 684.2,265.6 L 677.3,274.1 L 672.7,282.6 L 668.1,291.1 L 663.5,293.2 L 651.9,291.1 L 642.7,289.0 Z",
-    cx: 648.0, cy: 272.0, short: "Herts"
-  },
-  "Greater London": {
-    d: "M 642.7,289.0 L 651.9,291.1 L 663.5,293.2 L 675.0,295.4 L 684.2,299.6 L 691.2,303.9 L 698.1,308.1 L 705.0,312.4 L 709.6,316.6 L 711.9,325.1 L 709.6,329.4 L 702.7,333.6 L 695.8,337.9 L 688.8,342.1 L 681.9,346.4 L 677.3,354.9 L 679.6,363.4 L 679.6,371.9 L 672.7,371.9 L 663.5,363.4 L 654.2,354.9 L 642.7,350.6 L 633.5,346.4 L 624.2,342.1 L 610.4,346.4 L 605.8,342.1 L 610.4,333.6 L 615.0,329.4 L 619.6,325.1 L 624.2,320.9 L 626.5,316.6 L 624.2,312.4 L 621.9,308.1 L 624.2,299.6 L 628.8,295.4 L 633.5,291.1 L 642.7,289.0 Z",
-    cx: 662.0, cy: 328.0, short: "London"
-  },
-  "Essex": {
-    d: "M 691.2,303.9 L 698.1,308.1 L 705.0,312.4 L 709.6,316.6 L 711.9,325.1 L 709.6,329.4 L 718.8,329.4 L 728.1,331.5 L 737.3,333.6 L 746.5,335.8 L 755.8,340.0 L 765.0,342.1 L 771.9,329.4 L 776.5,320.9 L 781.2,312.4 L 788.1,303.9 L 795.0,295.4 L 799.6,287.0 L 795.0,282.6 L 790.4,278.4 L 785.8,274.1 L 781.2,265.6 L 774.2,261.4 L 765.0,257.1 L 755.8,252.9 L 746.5,248.6 L 737.3,244.4 L 728.1,244.4 L 718.8,248.6 L 709.6,257.1 L 700.4,265.6 L 691.2,274.1 L 684.2,282.6 L 675.0,295.4 L 684.2,299.6 L 691.2,303.9 Z",
-    cx: 740.0, cy: 293.0, short: "Essex"
-  },
-  "Surrey": {
-    d: "M 585.0,405.9 L 582.7,397.4 L 578.1,388.9 L 573.5,380.4 L 580.4,371.9 L 587.3,363.4 L 591.9,354.9 L 596.5,350.6 L 610.4,346.4 L 624.2,342.1 L 633.5,346.4 L 642.7,350.6 L 654.2,354.9 L 663.5,363.4 L 672.7,371.9 L 679.6,371.9 L 677.3,384.6 L 672.7,397.4 L 668.1,405.9 L 663.5,414.4 L 656.5,418.6 L 649.6,422.9 L 640.4,427.1 L 631.2,431.4 L 619.6,431.4 L 610.4,427.1 L 601.2,422.9 L 594.2,418.6 L 587.3,414.4 L 585.0,405.9 Z",
-    cx: 630.0, cy: 388.0, short: "Surrey"
-  },
-  "West Sussex": {
-    d: "M 571.2,448.4 L 573.5,439.9 L 575.8,431.4 L 578.1,422.9 L 582.7,414.4 L 587.3,414.4 L 594.2,418.6 L 601.2,422.9 L 610.4,427.1 L 619.6,431.4 L 631.2,431.4 L 640.4,427.1 L 649.6,431.4 L 658.8,435.6 L 668.1,439.9 L 672.7,448.4 L 670.4,461.1 L 663.5,469.6 L 654.2,473.9 L 645.0,478.1 L 633.5,480.3 L 621.9,482.4 L 612.7,482.4 L 603.5,480.3 L 594.2,476.0 L 587.3,471.8 L 580.4,465.4 L 575.8,461.1 L 573.5,456.9 L 571.2,448.4 Z",
-    cx: 618.0, cy: 452.0, short: "W.Sussex"
-  },
-  "East Sussex": {
-    d: "M 668.1,439.9 L 658.8,435.6 L 649.6,431.4 L 649.6,422.9 L 656.5,418.6 L 663.5,414.4 L 668.1,405.9 L 677.3,401.6 L 686.5,405.9 L 695.8,410.1 L 705.0,414.4 L 714.2,418.6 L 723.5,422.9 L 732.7,427.1 L 739.6,431.4 L 746.5,439.9 L 753.5,446.2 L 748.8,452.6 L 741.9,461.1 L 732.7,465.4 L 723.5,469.6 L 714.2,473.9 L 705.0,478.1 L 693.5,482.4 L 684.2,484.5 L 675.0,482.4 L 670.4,473.9 L 669.2,465.4 L 670.4,456.9 L 672.7,448.4 L 668.1,439.9 Z",
-    cx: 705.0, cy: 448.0, short: "E.Sussex"
-  },
-  "Kent": {
-    d: "M 679.6,371.9 L 677.3,384.6 L 672.7,397.4 L 677.3,401.6 L 686.5,405.9 L 695.8,410.1 L 705.0,414.4 L 714.2,418.6 L 723.5,422.9 L 732.7,427.1 L 739.6,431.4 L 746.5,439.9 L 753.5,446.2 L 758.1,439.9 L 765.0,435.6 L 771.9,431.4 L 778.8,427.1 L 785.8,418.6 L 792.7,410.1 L 801.9,405.9 L 808.8,401.6 L 815.8,393.1 L 825.0,384.6 L 831.9,376.1 L 836.5,367.6 L 838.8,359.1 L 834.2,354.9 L 825.0,352.7 L 813.5,354.9 L 801.9,357.0 L 792.7,354.9 L 783.5,350.6 L 774.2,346.4 L 765.0,342.1 L 755.8,340.0 L 746.5,335.8 L 737.3,333.6 L 728.1,331.5 L 718.8,329.4 L 709.6,329.4 L 711.9,325.1 L 709.6,316.6 L 705.0,312.4 L 698.1,308.1 L 691.2,303.9 L 684.2,299.6 L 675.0,295.4 L 679.6,363.4 L 679.6,371.9 Z",
-    cx: 758.0, cy: 380.0, short: "Kent"
-  },
-  "Cambridgeshire": {
-    d: "M 658.8,210.4 L 661.2,201.9 L 658.8,193.4 L 654.2,184.9 L 647.3,180.6 L 638.1,172.1 L 642.7,163.6 L 645.0,155.1 L 651.9,146.6 L 658.8,138.1 L 665.8,129.6 L 672.7,121.1 L 679.6,112.6 L 686.5,104.1 L 695.8,99.9 L 705.0,95.6 L 711.9,104.1 L 716.5,112.6 L 718.8,121.1 L 718.8,129.6 L 716.5,138.1 L 711.9,146.6 L 707.3,155.1 L 702.7,163.6 L 698.1,172.1 L 693.5,180.6 L 688.8,189.1 L 684.2,197.6 L 679.6,206.1 L 675.0,214.6 L 670.4,223.1 L 663.5,227.4 L 658.8,227.4 L 656.5,218.9 L 658.8,210.4 Z",
-    cx: 682.0, cy: 165.0, short: "Cambs"
-  },
-  "Suffolk": {
-    d: "M 716.5,138.1 L 718.8,129.6 L 718.8,121.1 L 716.5,112.6 L 711.9,104.1 L 721.2,99.9 L 730.4,104.1 L 739.6,108.4 L 748.8,112.6 L 758.1,121.1 L 767.3,129.6 L 776.5,133.9 L 785.8,138.1 L 795.0,142.4 L 804.2,146.6 L 813.5,150.9 L 822.7,155.1 L 829.6,163.6 L 836.5,172.1 L 845.8,180.6 L 852.7,189.1 L 857.3,197.6 L 859.6,206.1 L 855.0,214.6 L 848.1,223.1 L 838.8,227.4 L 827.3,231.6 L 815.8,231.6 L 804.2,231.6 L 792.7,231.6 L 781.2,231.6 L 769.6,231.6 L 758.1,231.6 L 746.5,231.6 L 737.3,229.5 L 728.1,244.4 L 718.8,248.6 L 709.6,257.1 L 700.4,265.6 L 691.2,274.1 L 684.2,197.6 L 688.8,189.1 L 693.5,180.6 L 698.1,172.1 L 702.7,163.6 L 707.3,155.1 L 711.9,146.6 L 716.5,138.1 Z",
-    cx: 775.0, cy: 182.0, short: "Suffolk"
-  },
-  "Norfolk": {
-    d: "M 679.6,112.6 L 686.5,104.1 L 695.8,99.9 L 705.0,95.6 L 698.1,87.1 L 693.5,78.6 L 691.2,70.1 L 695.8,61.6 L 700.4,53.1 L 707.3,44.6 L 716.5,36.1 L 725.8,27.6 L 735.0,23.4 L 746.5,21.2 L 758.1,19.1 L 769.6,19.1 L 781.2,21.2 L 792.7,23.4 L 804.2,27.6 L 815.8,36.1 L 825.0,44.6 L 834.2,53.1 L 841.2,61.6 L 850.4,70.1 L 857.3,78.6 L 861.9,87.1 L 866.5,95.6 L 868.8,104.1 L 866.5,112.6 L 861.9,121.1 L 855.0,129.6 L 845.8,138.1 L 836.5,146.6 L 827.3,150.9 L 818.1,146.6 L 808.8,142.4 L 799.6,138.1 L 790.4,133.9 L 781.2,129.6 L 771.9,125.4 L 762.7,121.1 L 753.5,116.9 L 744.2,112.6 L 735.0,108.4 L 725.8,104.1 L 716.5,99.9 L 707.3,104.1 L 698.1,108.4 L 688.8,112.6 L 679.6,112.6 Z",
-    cx: 775.0, cy: 88.0, short: "Norfolk"
-  },
+const TOPO_URL =
+  "https://cdn.jsdelivr.net/gh/martinjc/UK-GeoJSON@master/json/eng/topo_cer.json";
+
+// ── Map GeoJSON county names → venue-data county names ──
+const NAME_MAP = {
+  "City of London": "Greater London",
+  "Herefordshire, County of": "Herefordshire",
+  "Bristol, City of": "Bristol",
 };
 
+// ── Short display names for map labels ──
+const SHORT = {
+  Cornwall: "Cornwall", Devon: "Devon", Somerset: "Somerset", Dorset: "Dorset",
+  Wiltshire: "Wilts", Hampshire: "Hants", "Isle of Wight": "IoW",
+  Gloucestershire: "Glos", Herefordshire: "Herefs", Worcestershire: "Worcs",
+  Shropshire: "Shrops", Warwickshire: "Warks", Northamptonshire: "Northants",
+  Oxfordshire: "Oxon", Buckinghamshire: "Bucks", Berkshire: "Berks",
+  Bedfordshire: "Beds", Hertfordshire: "Herts", "Greater London": "London",
+  Essex: "Essex", Surrey: "Surrey", "West Sussex": "W.Sussex",
+  "East Sussex": "E.Sussex", Kent: "Kent", Cambridgeshire: "Cambs",
+  Suffolk: "Suffolk", Norfolk: "Norfolk",
+};
+
+// ── All venue-data county names (used to decide which to label) ──
+const VENUE_COUNTIES = new Set(Object.keys(SHORT));
+
 // ── Colour scale ──
-const HEAT = ["#F5ECD7","#E8D9B4","#D4BF8A","#C1A664","#A88C42","#8F7232","#705824","#574318"];
+const HEAT = [
+  "#F5ECD7", "#E8D9B4", "#D4BF8A", "#C1A664",
+  "#A88C42", "#8F7232", "#705824", "#574318",
+];
 function heatCol(count, max) {
-  if (!max) return HEAT[0];
-  const idx = Math.min(Math.floor((count / max) * (HEAT.length - 1)), HEAT.length - 1);
+  if (!count || !max) return HEAT[0];
+  const idx = Math.min(
+    Math.floor((count / max) * (HEAT.length - 1)),
+    HEAT.length - 1
+  );
   return HEAT[idx];
 }
 
@@ -131,89 +54,255 @@ const C = {
   bg: "#FAFAF8", card: "#FFFFFF", ink: "#18150F", inkSec: "#5C564E",
   accent: "#7D5A1A", border: "#E6E1D9", borderLight: "#F0ECE5",
 };
-const F = { serif: "'Georgia','Times New Roman',serif", sans: "'Inter',-apple-system,sans-serif" };
+const F = {
+  serif: "'Georgia','Times New Roman',serif",
+  sans: "'Inter',-apple-system,sans-serif",
+};
+
+// ── SVG dimensions ──
+const W = 520;
+const H = 620;
 
 export default function CountyMap({ leads, onCountyClick }) {
   const [hover, setHover] = useState(null);
+  const [geoData, setGeoData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
+  // Fetch TopoJSON on mount
+  useEffect(() => {
+    let cancelled = false;
+    fetch(TOPO_URL)
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((topo) => {
+        if (cancelled) return;
+        // Find the first object key in the TopoJSON
+        const objKey = Object.keys(topo.objects)[0];
+        const geo = topojson.feature(topo, topo.objects[objKey]);
+        setGeoData(geo);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to load county boundaries:", err);
+        setError(err.message);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Count venues per county
   const countByCounty = useMemo(() => {
     const m = {};
-    (leads || []).forEach(l => { if (l.county) m[l.county] = (m[l.county] || 0) + 1; });
+    (leads || []).forEach((l) => {
+      if (l.county) m[l.county] = (m[l.county] || 0) + 1;
+    });
     return m;
   }, [leads]);
 
-  const maxCount = useMemo(() => Math.max(...Object.values(countByCounty), 1), [countByCounty]);
+  const maxCount = useMemo(
+    () => Math.max(...Object.values(countByCounty), 1),
+    [countByCounty]
+  );
   const totalVenues = (leads || []).length;
-  const countyNames = Object.keys(COUNTY_DATA).sort((a, b) => (countByCounty[b] || 0) - (countByCounty[a] || 0));
+
+  // Build projection + path generator + features
+  const { pathGen, features } = useMemo(() => {
+    if (!geoData) return { pathGen: null, features: [] };
+
+    // Filter to only England (exclude Scottish islands etc) and set up projection
+    const projection = geoMercator().fitSize([W, H], geoData);
+    const pg = geoPath(projection);
+
+    const feats = geoData.features.map((f) => {
+      // Try multiple property keys for the county name
+      const rawName =
+        f.properties.CTYUA13NM ||
+        f.properties.NAME ||
+        f.properties.CTYUA17NM ||
+        f.properties.EER13NM ||
+        f.properties.name ||
+        Object.values(f.properties).find((v) => typeof v === "string" && v.length > 2) ||
+        "Unknown";
+      const countyName = NAME_MAP[rawName] || rawName;
+      const centroid = pg.centroid(f);
+      return {
+        feature: f,
+        path: pg(f),
+        name: countyName,
+        short: SHORT[countyName] || countyName.slice(0, 8),
+        cx: centroid[0],
+        cy: centroid[1],
+        hasVenues: VENUE_COUNTIES.has(countyName),
+      };
+    });
+
+    return { pathGen: pg, features: feats };
+  }, [geoData]);
+
+  // Counties sorted by venue count for pills
+  const sortedCounties = useMemo(() => {
+    return [...VENUE_COUNTIES].sort(
+      (a, b) => (countByCounty[b] || 0) - (countByCounty[a] || 0)
+    );
+  }, [countByCounty]);
+
+  const handleClick = useCallback(
+    (name) => { if (onCountyClick) onCountyClick(name); },
+    [onCountyClick]
+  );
+
+  // ── Loading state ──
+  if (loading) {
+    return (
+      <div style={{
+        background: C.card, borderRadius: 12, border: `1px solid ${C.borderLight}`,
+        padding: "24px 28px", marginBottom: 24, textAlign: "center",
+      }}>
+        <p style={{ fontFamily: F.sans, fontSize: 14, color: C.inkSec }}>
+          Loading county boundaries…
+        </p>
+      </div>
+    );
+  }
+
+  // ── Error state — show simple text list ──
+  if (error || !features.length) {
+    return (
+      <div style={{
+        background: C.card, borderRadius: 12, border: `1px solid ${C.borderLight}`,
+        padding: "24px 28px", marginBottom: 24,
+      }}>
+        <h3 style={{ fontFamily: F.serif, fontSize: 20, color: C.ink, margin: "0 0 12px" }}>
+          England — Venue Map
+        </h3>
+        <p style={{ fontFamily: F.sans, fontSize: 13, color: C.inkSec, marginBottom: 16 }}>
+          {totalVenues} venues across {sortedCounties.length} counties · Click a county to view its leads
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {sortedCounties.map((name) => (
+            <button key={name} onClick={() => handleClick(name)} style={{
+              display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px",
+              background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 16,
+              fontFamily: F.sans, fontSize: 12, color: C.ink, cursor: "pointer",
+            }}>
+              {SHORT[name] || name}
+              <span style={{ fontWeight: 700, color: C.accent, fontSize: 11 }}>
+                {countByCounty[name] || 0}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ background: C.card, borderRadius: 12, border: `1px solid ${C.borderLight}`, padding: "24px 28px", marginBottom: 24 }}>
+    <div style={{
+      background: C.card, borderRadius: 12, border: `1px solid ${C.borderLight}`,
+      padding: "24px 28px", marginBottom: 24,
+    }}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+      <div style={{
+        display: "flex", justifyContent: "space-between",
+        alignItems: "flex-start", marginBottom: 16,
+      }}>
         <div>
-          <h3 style={{ fontFamily: F.serif, fontSize: 20, color: C.ink, margin: 0 }}>England — Venue Map</h3>
+          <h3 style={{ fontFamily: F.serif, fontSize: 20, color: C.ink, margin: 0 }}>
+            England — Venue Map
+          </h3>
           <p style={{ fontFamily: F.sans, fontSize: 13, color: C.inkSec, margin: "4px 0 0" }}>
-            {totalVenues} venues across {countyNames.length} counties · Click a county to view its leads
+            {totalVenues} venues across {sortedCounties.length} counties · Click a county to view its leads
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontFamily: F.sans, color: C.inkSec }}>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 4,
+          fontSize: 11, fontFamily: F.sans, color: C.inkSec,
+        }}>
           <span>Fewer</span>
-          {HEAT.map((c, i) => <div key={i} style={{ width: 14, height: 10, background: c, borderRadius: 2 }} />)}
+          {HEAT.map((c, i) => (
+            <div key={i} style={{ width: 14, height: 10, background: c, borderRadius: 2 }} />
+          ))}
           <span>More</span>
         </div>
       </div>
 
       {/* SVG Map */}
-      <div style={{ background: "#F0ECE5", borderRadius: 8, padding: 8, position: "relative" }}>
-        <svg viewBox="0 0 900 680" style={{ width: "100%", height: "auto", display: "block" }}>
-          {Object.entries(COUNTY_DATA).map(([name, data]) => {
-            const count = countByCounty[name] || 0;
-            const isHovered = hover === name;
+      <div style={{
+        background: "#F0ECE5", borderRadius: 8, padding: 8, position: "relative",
+      }}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          style={{ width: "100%", height: "auto", display: "block" }}
+        >
+          {/* County shapes */}
+          {features.map((f, i) => {
+            if (!f.path) return null;
+            const count = countByCounty[f.name] || 0;
+            const isHovered = hover === f.name;
+            const isVenueCounty = f.hasVenues;
             return (
-              <g key={name}
-                onMouseEnter={() => setHover(name)}
+              <g
+                key={f.name + i}
+                onMouseEnter={() => setHover(f.name)}
                 onMouseLeave={() => setHover(null)}
-                onClick={() => onCountyClick && onCountyClick(name)}
-                style={{ cursor: "pointer" }}
+                onClick={() => isVenueCounty && handleClick(f.name)}
+                style={{ cursor: isVenueCounty ? "pointer" : "default" }}
               >
                 <path
-                  d={data.d}
-                  fill={heatCol(count, maxCount)}
-                  stroke={isHovered ? C.accent : "#BEB6A8"}
-                  strokeWidth={isHovered ? 2.5 : 1}
-                  opacity={isHovered ? 1 : 0.92}
+                  d={f.path}
+                  fill={isVenueCounty ? heatCol(count, maxCount) : "#E8E4DC"}
+                  stroke={isHovered && isVenueCounty ? C.accent : "#BEB6A8"}
+                  strokeWidth={isHovered && isVenueCounty ? 2 : 0.75}
+                  opacity={isHovered && isVenueCounty ? 1 : 0.92}
                 />
-                <text
-                  x={data.cx} y={data.cy - 4}
-                  textAnchor="middle" fontSize={name === "Isle of Wight" ? 7 : 10}
-                  fontFamily={F.sans} fontWeight="600" fill={C.ink}
-                  pointerEvents="none"
-                >
-                  {data.short}
-                </text>
-                <text
-                  x={data.cx} y={data.cy + 9}
-                  textAnchor="middle" fontSize={9}
-                  fontFamily={F.sans} fontWeight="700" fill={C.accent}
-                  pointerEvents="none"
-                >
-                  {count}
-                </text>
               </g>
             );
           })}
+
+          {/* Labels — only for venue counties */}
+          {features
+            .filter((f) => f.hasVenues && f.cx && f.cy && !isNaN(f.cx))
+            .map((f, i) => {
+              const count = countByCounty[f.name] || 0;
+              const fontSize = f.name === "Isle of Wight" ? 6 : f.name === "Greater London" ? 7 : 8;
+              return (
+                <g key={"lbl-" + f.name + i} pointerEvents="none">
+                  <text
+                    x={f.cx} y={f.cy - 3}
+                    textAnchor="middle" fontSize={fontSize}
+                    fontFamily={F.sans} fontWeight="600" fill={C.ink}
+                  >
+                    {f.short}
+                  </text>
+                  <text
+                    x={f.cx} y={f.cy + 7}
+                    textAnchor="middle" fontSize={7}
+                    fontFamily={F.sans} fontWeight="700" fill={C.accent}
+                  >
+                    {count}
+                  </text>
+                </g>
+              );
+            })}
         </svg>
 
         {/* Tooltip */}
-        {hover && (
+        {hover && VENUE_COUNTIES.has(hover) && (
           <div style={{
-            position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,0.96)",
-            border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 14px",
-            fontFamily: F.sans, boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+            position: "absolute", top: 12, right: 12,
+            background: "rgba(255,255,255,0.96)",
+            border: `1px solid ${C.border}`, borderRadius: 8,
+            padding: "8px 14px", fontFamily: F.sans,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
           }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>{hover}</div>
             <div style={{ fontSize: 13, color: C.accent, fontWeight: 700 }}>
-              {countByCounty[hover] || 0} venue{(countByCounty[hover] || 0) !== 1 ? "s" : ""}
+              {countByCounty[hover] || 0} venue
+              {(countByCounty[hover] || 0) !== 1 ? "s" : ""}
             </div>
           </div>
         )}
@@ -221,24 +310,31 @@ export default function CountyMap({ leads, onCountyClick }) {
 
       {/* County pills */}
       <div style={{ marginTop: 16 }}>
-        <div style={{ fontSize: 11, fontFamily: F.sans, color: C.inkSec, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+        <div style={{
+          fontSize: 11, fontFamily: F.sans, color: C.inkSec,
+          textTransform: "uppercase", letterSpacing: 1, marginBottom: 8,
+        }}>
           All Regions ({totalVenues} venues)
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {countyNames.map(name => (
-            <button key={name}
-              onClick={() => onCountyClick && onCountyClick(name)}
+          {sortedCounties.map((name) => (
+            <button
+              key={name}
+              onClick={() => handleClick(name)}
               style={{
-                display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px",
-                background: C.bg, border: `1px solid ${C.borderLight}`, borderRadius: 16,
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "5px 10px", background: C.bg,
+                border: `1px solid ${C.borderLight}`, borderRadius: 16,
                 fontFamily: F.sans, fontSize: 12, color: C.ink, cursor: "pointer",
                 transition: "all .15s",
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = C.borderLight; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.accent; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.borderLight; }}
             >
-              {COUNTY_DATA[name]?.short || name}
-              <span style={{ fontWeight: 700, color: C.accent, fontSize: 11 }}>{countByCounty[name] || 0}</span>
+              {SHORT[name] || name}
+              <span style={{ fontWeight: 700, color: C.accent, fontSize: 11 }}>
+                {countByCounty[name] || 0}
+              </span>
             </button>
           ))}
         </div>
