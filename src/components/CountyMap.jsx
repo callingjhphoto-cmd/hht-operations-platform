@@ -9,8 +9,8 @@ import { geoPath, geoMercator } from "d3-geo";
 // Hover for county name + lead count, click to filter
 // ═══════════════════════════════════════════════════════════════
 
-const GEO_URL =
-  "https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Counties_and_Unitary_Authorities_December_2022_EN_BUC/FeatureServer/0/query?where=1%3D1&outFields=CTYUA22NM&returnGeometry=true&outSR=4326&f=geojson&resultRecordCount=200";
+// Bundled in public/ — fetched from own domain, no CORS issues
+const GEO_URL = import.meta.env.BASE_URL + "counties.geojson";
 
 // ── Map ONS names → venue-data county names ──
 // ONS data includes London boroughs, unitary authorities etc.
@@ -138,7 +138,7 @@ export default function CountyMap({ leads, onCountyClick }) {
 
     const feats = geoData.features.map((f) => {
       // ONS Counties & Unitary Authorities use CTYUA22NM
-      const rawName = f.properties.CTYUA22NM || "Unknown";
+      const rawName = f.properties.n || f.properties.CTYUA22NM || "Unknown";
       const countyName = LONDON_BOROUGHS.has(rawName) ? "Greater London" : (NAME_MAP[rawName] || rawName);
       const centroid = pg.centroid(f);
       return {
