@@ -83,7 +83,7 @@ const F = {
 
 // ── SVG dimensions ──
 const W = 520;
-const H = 620;
+const H = 460;
 
 export default function CountyMap({ leads, onCountyClick }) {
   const [hover, setHover] = useState(null);
@@ -275,31 +275,41 @@ export default function CountyMap({ leads, onCountyClick }) {
             );
           })}
 
-          {/* Labels — only for venue counties */}
-          {features
-            .filter((f) => f.hasVenues && f.cx && f.cy && !isNaN(f.cx))
-            .map((f, i) => {
-              const count = countByCounty[f.name] || 0;
-              const fontSize = f.name === "Isle of Wight" ? 6 : f.name === "Greater London" ? 7 : 8;
+          {/* Labels — one per unique county, averaged centroids */}
+          {(() => {
+            // Group centroids by county name, then average them
+            const groups = {};
+            features.forEach((f) => {
+              if (!f.hasVenues || !f.cx || !f.cy || isNaN(f.cx)) return;
+              if (!groups[f.name]) groups[f.name] = { xs: [], ys: [], short: f.short };
+              groups[f.name].xs.push(f.cx);
+              groups[f.name].ys.push(f.cy);
+            });
+            return Object.entries(groups).map(([name, g]) => {
+              const cx = g.xs.reduce((a, b) => a + b, 0) / g.xs.length;
+              const cy = g.ys.reduce((a, b) => a + b, 0) / g.ys.length;
+              const count = countByCounty[name] || 0;
+              const fontSize = name === "Isle of Wight" ? 5 : name === "Greater London" ? 7 : 7;
               return (
-                <g key={"lbl-" + f.name + i} pointerEvents="none">
+                <g key={"lbl-" + name} pointerEvents="none">
                   <text
-                    x={f.cx} y={f.cy - 3}
+                    x={cx} y={cy - 2}
                     textAnchor="middle" fontSize={fontSize}
                     fontFamily={F.sans} fontWeight="600" fill={C.ink}
                   >
-                    {f.short}
+                    {g.short}
                   </text>
                   <text
-                    x={f.cx} y={f.cy + 7}
-                    textAnchor="middle" fontSize={7}
+                    x={cx} y={cy + 6}
+                    textAnchor="middle" fontSize={6}
                     fontFamily={F.sans} fontWeight="700" fill={C.accent}
                   >
                     {count}
                   </text>
                 </g>
               );
-            })}
+            });
+          })()}
         </svg>
 
         {/* Tooltip */}
