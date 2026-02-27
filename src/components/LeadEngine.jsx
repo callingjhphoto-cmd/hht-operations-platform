@@ -3,16 +3,30 @@ import { VENUE_DATABASE } from "../lib/venueData";
 import CSVImport from "./CSVImport";
 
 // ═══════════════════════════════════════════════════════════════
-// HH&T Lead Generation CRM — "Dark Mode Supremacy" + Liquid Glass
+// HH&T Lead Generation CRM — White Editorial Design
+// Matches site design: clean, warm, Georgia serif + Inter sans
 // Kanban Pipeline: Scraped → Enriched → Outreach → Warm Reply → Converted
 // ═══════════════════════════════════════════════════════════════
 
+// Site-matching colour palette (from App.jsx C object)
+const C = {
+  bg: "#FAFAF8", bgWarm: "#F5F1EC", card: "#FFFFFF", cardHover: "#FDFCFA",
+  ink: "#18150F", inkSec: "#5C564E", inkMuted: "#9A948C",
+  accent: "#7D5A1A", accentLight: "#B8922E", accentSubtle: "rgba(125,90,26,0.06)",
+  border: "#E6E1D9", borderLight: "#F0ECE5",
+  success: "#2B7A4B", successBg: "#F0F9F3",
+  warn: "#956018", warnBg: "#FFF9F0",
+  danger: "#9B3535", dangerBg: "#FDF2F2",
+  info: "#2A6680", infoBg: "#F0F7FA",
+};
+const F = { serif: "'Georgia','Times New Roman',serif", sans: "'Inter',-apple-system,'Segoe UI',sans-serif", mono: "'SF Mono','Fira Code',monospace" };
+
 const PIPELINE_COLUMNS = [
-  { id: "scraped", label: "Scraped Leads", color: "#CD7F32" },
-  { id: "enriched", label: "Enriched & Scored", color: "#B87333" },
-  { id: "outreach", label: "Outreach Deployed", color: "#C9A961" },
-  { id: "warm_reply", label: "Warm Reply", color: "#D4A844" },
-  { id: "converted", label: "Converted to Project", color: "#8B6914" },
+  { id: "scraped", label: "Scraped Leads", color: "#2A6680" },
+  { id: "enriched", label: "Enriched & Scored", color: "#5B6AAF" },
+  { id: "outreach", label: "Outreach Deployed", color: "#956018" },
+  { id: "warm_reply", label: "Warm Reply", color: "#B8922E" },
+  { id: "converted", label: "Converted to Project", color: "#2B7A4B" },
 ];
 
 const TEAM = ["Joe Stokoe", "Matt Robertson", "Emily Blacklock", "Seb Davis", "Jason Sales", "Anja Rubin", "Katy Kedslie"];
@@ -38,10 +52,10 @@ function scoreVenue(v) {
 }
 
 function getPriority(score) {
-  if (score >= 85) return { label: "Hot", color: "#FF4444" };
-  if (score >= 70) return { label: "Warm", color: "#D4A844" };
-  if (score >= 55) return { label: "Cool", color: "#B87333" };
-  return { label: "Cold", color: "#666" };
+  if (score >= 85) return { label: "Hot", color: C.danger };
+  if (score >= 70) return { label: "Warm", color: C.warn };
+  if (score >= 55) return { label: "Cool", color: C.info };
+  return { label: "Cold", color: C.inkMuted };
 }
 
 function generatePitch(venue) {
@@ -105,16 +119,25 @@ headsandtails.co.uk`
   };
 }
 
-// ═══════════════════════════════════════════════════════════════
-// DARK MODE STYLES
-// ═══════════════════════════════════════════════════════════════
-const S = {
-  glass: { background: "rgba(30, 25, 20, 0.6)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", border: "1px solid rgba(205, 127, 50, 0.15)", borderRadius: 16 },
-  copper: "#CD7F32", copperLight: "#D4A844", copperDark: "#8B6914", bronze: "#B87333",
-  textPrimary: "#e8e0d4", textSecondary: "#9a8e7f", textMuted: "#6b6055",
-  bgInput: "rgba(20, 18, 14, 0.8)",
-};
+// ═══ SHARED STYLE HELPERS ═══
+const cardStyle = (extra = {}) => ({ background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, ...extra });
+const pillStyle = (bg, color) => ({ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, fontFamily: F.sans, background: bg, color, letterSpacing: 0.3 });
+const inputStyle = { padding: "8px 12px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, fontFamily: F.sans, background: C.card, color: C.ink, outline: "none", width: "100%", boxSizing: "border-box" };
+const selectStyle = { ...inputStyle, appearance: "none", cursor: "pointer", paddingRight: 30, backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A948C' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center" };
 
+const btnPrimary = { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, fontSize: 13, fontWeight: 600, fontFamily: F.sans, cursor: "pointer", border: "none", background: C.ink, color: "#fff", transition: "all 0.15s" };
+const btnOutline = { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, fontSize: 13, fontWeight: 600, fontFamily: F.sans, cursor: "pointer", background: "transparent", color: C.ink, border: `1px solid ${C.border}`, transition: "all 0.15s" };
+const btnAccent = { ...btnPrimary, background: C.accent, color: "#fff" };
+const btnGhost = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, fontSize: 13, fontWeight: 600, fontFamily: F.sans, cursor: "pointer", background: "transparent", color: C.inkSec, border: "none", transition: "all 0.15s" };
+const btnDanger = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 6, fontSize: 12, fontWeight: 600, fontFamily: F.sans, cursor: "pointer", background: C.dangerBg, color: C.danger, border: `1px solid ${C.danger}33`, transition: "all 0.15s" };
+
+const overlay = { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(24,21,15,0.4)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 };
+const closeBtn = { width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.border}`, background: C.card, color: C.inkMuted, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
+const lbl = { fontSize: 11, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block", fontFamily: F.sans };
+const pgBtn = { padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.border}`, background: C.card, color: C.inkSec, fontSize: 12, cursor: "pointer", fontFamily: F.sans };
+function tag(color) { return { display: "inline-block", padding: "2px 8px", borderRadius: 20, fontSize: 10, fontWeight: 600, background: `${color}12`, color, border: `1px solid ${color}20`, fontFamily: F.sans }; }
+
+// ═══ MAIN COMPONENT ═══
 export default function LeadEngineCRM() {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -148,7 +171,13 @@ export default function LeadEngineCRM() {
   const updateLead = useCallback((id, updates) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updates, updated_at: new Date().toISOString() } : l));
   }, []);
-  const moveToStage = useCallback((id, newStage) => { updateLead(id, { stage: newStage }); }, [updateLead]);
+
+  // Fixed: moveToStage now also updates selectedLead so the modal reflects the change
+  const moveToStage = useCallback((id, newStage) => {
+    updateLead(id, { stage: newStage });
+    setSelectedLead(prev => prev && prev.id === id ? { ...prev, stage: newStage } : prev);
+  }, [updateLead]);
+
   const deleteLeadFn = useCallback((id) => { setLeads(prev => prev.filter(l => l.id !== id)); setSelectedLead(null); }, []);
 
   const categories = useMemo(() => { const c = [...new Set(leads.map(l => l.category))].sort(); return ["All", ...c]; }, [leads]);
@@ -178,49 +207,49 @@ export default function LeadEngineCRM() {
   const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; };
 
   return (
-    <div style={{ background: "linear-gradient(135deg, #0a0a0a 0%, #1a1510 50%, #0d0d0d 100%)", minHeight: "100vh", color: "#e8e0d4", fontFamily: "'Lato', -apple-system, sans-serif" }}>
+    <div style={{ fontFamily: F.sans }}>
       {/* HEADER */}
-      <div style={{ padding: "24px 32px", borderBottom: "1px solid rgba(205,127,50,0.1)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-0.5px", margin: 0, background: "linear-gradient(135deg, #CD7F32, #D4A844, #B87333)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Lead Engine</h1>
-            <p style={{ color: S.textSecondary, fontSize: 13, margin: "4px 0 0" }}>{stats.total} venues · Avg score {stats.avgScore} · {stats.byStage.warm_reply + stats.byStage.converted} warm+</p>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, fontFamily: F.serif }}>Lead Engine</h2>
+            <p style={{ color: C.inkMuted, fontSize: 13, margin: "4px 0 0" }}>{stats.total} venues · Avg score {stats.avgScore} · {(stats.byStage.warm_reply || 0) + (stats.byStage.converted || 0)} warm+</p>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setShowCSVImport(true)} style={btnGhost}>⬆ Import</button>
-            <button onClick={() => setShowAddForm(true)} style={btnGhost}>+ Add Lead</button>
-            <button onClick={() => { localStorage.removeItem("hht_pipeline_v2"); initFromDB(); }} style={btnGhost}>↻ Reset</button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setShowCSVImport(true)} style={btnOutline}>Import CSV</button>
+            <button onClick={() => setShowAddForm(true)} style={btnOutline}>+ Add Lead</button>
+            <button onClick={() => { localStorage.removeItem("hht_pipeline_v2"); initFromDB(); }} style={btnGhost}>Reset</button>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ ...S.glass, display: "flex", padding: 3, borderRadius: 10 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", background: C.bgWarm, borderRadius: 8, padding: 3, border: `1px solid ${C.borderLight}` }}>
             {["kanban", "table", "stats"].map(v => (
-              <button key={v} onClick={() => setView(v)} style={{ padding: "6px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, background: view === v ? "rgba(205,127,50,0.2)" : "transparent", color: view === v ? S.copperLight : S.textSecondary, transition: "all .2s" }}>{v.charAt(0).toUpperCase() + v.slice(1)}</button>
+              <button key={v} onClick={() => setView(v)} style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F.sans, background: view === v ? C.card : "transparent", color: view === v ? C.ink : C.inkMuted, boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all .2s" }}>{v.charAt(0).toUpperCase() + v.slice(1)}</button>
             ))}
           </div>
-          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search venues, cities, counties..." style={{ ...S.glass, padding: "8px 14px", border: "1px solid rgba(205,127,50,0.15)", borderRadius: 10, background: S.bgInput, color: S.textPrimary, fontSize: 13, width: 260, outline: "none" }} />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={selStyle}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
-          <select value={filterDistance} onChange={e => setFilterDistance(e.target.value)} style={selStyle}>
-            <option value="all">All distances</option><option value="close">≤30 mi</option><option value="medium">30-60 mi</option><option value="far">60+ mi</option>
+          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search venues, cities, counties..." style={{ ...inputStyle, width: 260 }} />
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={selectStyle}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <select value={filterDistance} onChange={e => setFilterDistance(e.target.value)} style={selectStyle}>
+            <option value="all">All distances</option><option value="close">Within 30 mi</option><option value="medium">30–60 mi</option><option value="far">60+ mi</option>
           </select>
         </div>
       </div>
 
       {/* PIPELINE BAR */}
-      <div style={{ display: "flex", gap: 2, padding: "16px 32px 0", overflow: "auto" }}>
-        {PIPELINE_COLUMNS.map((col, i) => {
+      <div style={{ display: "flex", gap: 2, marginBottom: 20, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}` }}>
+        {PIPELINE_COLUMNS.map((col) => {
           const count = stats.byStage[col.id] || 0;
           return (
-            <div key={col.id} style={{ flex: 1, padding: "10px 12px", borderRadius: i === 0 ? "10px 0 0 10px" : i === 4 ? "0 10px 10px 0" : 0, background: `linear-gradient(135deg, ${col.color}22, ${col.color}11)`, textAlign: "center" }}>
-              <div style={{ fontSize: 20, fontWeight: 900, color: col.color }}>{count}</div>
-              <div style={{ fontSize: 10, color: S.textSecondary, textTransform: "uppercase", letterSpacing: 1 }}>{col.label}</div>
+            <div key={col.id} style={{ flex: 1, padding: "10px 12px", background: `${col.color}08`, textAlign: "center", borderRight: `1px solid ${C.borderLight}` }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: col.color, fontFamily: F.sans }}>{count}</div>
+              <div style={{ fontSize: 10, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, fontFamily: F.sans }}>{col.label}</div>
             </div>
           );
         })}
       </div>
 
       {/* CONTENT */}
-      <div style={{ padding: "16px 32px 32px" }}>
+      <div>
         {view === "kanban" && <KanbanView leads={filteredLeads} onDragStart={handleDragStart} onDrop={handleDrop} onDragOver={handleDragOver} onSelect={setSelectedLead} onPitch={setPitchModal} onMove={moveToStage} />}
         {view === "table" && <TableView leads={filteredLeads} onSelect={setSelectedLead} onMove={moveToStage} onPitch={setPitchModal} />}
         {view === "stats" && <StatsView leads={leads} stats={stats} />}
@@ -242,14 +271,14 @@ function KanbanView({ leads, onDragStart, onDrop, onDragOver, onSelect, onPitch,
       {PIPELINE_COLUMNS.map(col => {
         const colLeads = leads.filter(l => l.stage === col.id).sort((a, b) => (b.score || 0) - (a.score || 0));
         return (
-          <div key={col.id} onDrop={e => onDrop(e, col.id)} onDragOver={onDragOver} style={{ flex: "0 0 280px", minHeight: 400, ...S.glass, borderRadius: 14, overflow: "hidden", borderTop: `3px solid ${col.color}` }}>
-            <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(205,127,50,0.1)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><div style={{ fontSize: 13, fontWeight: 700, color: col.color }}>{col.label}</div><div style={{ fontSize: 11, color: S.textMuted }}>{colLeads.length} leads</div></div>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: `${col.color}22`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: col.color }}>{colLeads.length}</div>
+          <div key={col.id} onDrop={e => onDrop(e, col.id)} onDragOver={onDragOver} style={{ flex: "0 0 280px", minHeight: 400, ...cardStyle({ padding: 0, overflow: "hidden", borderTop: `3px solid ${col.color}` }) }}>
+            <div style={{ padding: "14px 16px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: `${col.color}06` }}>
+              <div><div style={{ fontSize: 13, fontWeight: 700, color: col.color, fontFamily: F.sans }}>{col.label}</div><div style={{ fontSize: 11, color: C.inkMuted }}>{colLeads.length} leads</div></div>
+              <div style={{ ...pillStyle(`${col.color}12`, col.color), fontSize: 13, fontWeight: 900 }}>{colLeads.length}</div>
             </div>
             <div style={{ padding: 8, maxHeight: "60vh", overflowY: "auto" }}>
               {colLeads.map(lead => <KCard key={lead.id} lead={lead} col={col} onDragStart={onDragStart} onSelect={onSelect} onPitch={onPitch} />)}
-              {colLeads.length === 0 && <div style={{ padding: "30px 16px", textAlign: "center", color: S.textMuted, fontSize: 12 }}>Drop leads here</div>}
+              {colLeads.length === 0 && <div style={{ padding: "30px 16px", textAlign: "center", color: C.inkMuted, fontSize: 12, fontStyle: "italic" }}>Drop leads here</div>}
             </div>
           </div>
         );
@@ -263,19 +292,19 @@ function KCard({ lead, col, onDragStart, onSelect, onPitch }) {
   const p = getPriority(lead.score || 0);
   return (
     <div draggable onDragStart={e => onDragStart(e, lead)} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} onClick={() => onSelect(lead)}
-      style={{ padding: "12px 14px", marginBottom: 8, borderRadius: 12, cursor: "pointer", background: h ? "rgba(50,40,30,0.7)" : "rgba(25,20,16,0.5)", backdropFilter: "blur(12px)", border: `1px solid ${h ? "rgba(205,127,50,0.3)" : "rgba(205,127,50,0.08)"}`, transition: "all 0.2s", transform: h ? "translateY(-1px)" : "none", boxShadow: h ? "0 4px 20px rgba(205,127,50,0.1)" : "none" }}>
+      style={{ padding: "12px 14px", marginBottom: 8, borderRadius: 8, cursor: "pointer", background: h ? C.cardHover : C.card, border: `1px solid ${h ? C.border : C.borderLight}`, transition: "all 0.2s", transform: h ? "translateY(-1px)" : "none", boxShadow: h ? "0 4px 12px rgba(0,0,0,0.06)" : "none" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: S.textPrimary, lineHeight: 1.3, flex: 1, marginRight: 8 }}>{lead.venue_name}</div>
-        <div style={{ fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 6, background: `${p.color}22`, color: p.color, whiteSpace: "nowrap" }}>{lead.score}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, lineHeight: 1.3, flex: 1, marginRight: 8, fontFamily: F.sans }}>{lead.venue_name}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, padding: "2px 7px", borderRadius: 6, background: `${p.color}12`, color: p.color }}>{lead.score}</div>
       </div>
-      <div style={{ fontSize: 11, color: S.textSecondary, marginBottom: 4 }}>{lead.city || lead.location}{lead.distance_from_london_miles > 0 ? ` · ${lead.distance_from_london_miles}mi` : ""}</div>
+      <div style={{ fontSize: 11, color: C.inkMuted, marginBottom: 4 }}>{lead.city || lead.location}{lead.distance_from_london_miles > 0 ? ` · ${lead.distance_from_london_miles}mi` : ""}</div>
       <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
         <span style={tag(col.color)}>{lead.category}</span>
-        {lead.capacity > 0 && <span style={tag("#666")}>{lead.capacity} pax</span>}
+        {lead.capacity > 0 && <span style={tag(C.inkMuted)}>{lead.capacity} pax</span>}
       </div>
-      {lead.trigger_event && <div style={{ fontSize: 10, color: S.textMuted, lineHeight: 1.4, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{lead.trigger_event}</div>}
+      {lead.trigger_event && <div style={{ fontSize: 10, color: C.inkMuted, lineHeight: 1.4, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{lead.trigger_event}</div>}
       {(lead.stage === "enriched" || lead.stage === "scraped") && (
-        <button onClick={e => { e.stopPropagation(); onPitch(lead); }} style={{ width: "100%", padding: "6px 0", borderRadius: 8, border: "1px solid rgba(205,127,50,0.3)", background: "linear-gradient(135deg, rgba(205,127,50,0.15), rgba(184,115,51,0.1))", color: S.copperLight, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✦ Generate Pitch</button>
+        <button onClick={e => { e.stopPropagation(); onPitch(lead); }} style={{ width: "100%", padding: "6px 0", borderRadius: 6, border: `1px solid ${C.accent}33`, background: C.accentSubtle, color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: F.sans, transition: "all .15s" }}>Generate Pitch</button>
       )}
     </div>
   );
@@ -293,37 +322,37 @@ function TableView({ leads, onSelect, onMove, onPitch }) {
   const ts = (f) => { if (sortF === f) setSortD(d => d === "asc" ? "desc" : "asc"); else { setSortF(f); setSortD("desc"); } };
 
   return (
-    <div style={{ ...S.glass, borderRadius: 14, overflow: "hidden" }}>
+    <div style={{ ...cardStyle({ padding: 0, overflow: "hidden" }) }}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr style={{ borderBottom: "1px solid rgba(205,127,50,0.15)" }}>
+          <thead><tr style={{ borderBottom: `2px solid ${C.border}`, background: C.bgWarm }}>
             {[["venue_name","Venue"],["city","Location"],["category","Type"],["capacity","Cap."],["distance_from_london_miles","Dist."],["score","Score"],["stage","Stage"],["","Actions"]].map(([k,l]) => (
-              <th key={k||l} onClick={() => k && ts(k)} style={{ padding: "12px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: S.textSecondary, textTransform: "uppercase", letterSpacing: 0.5, cursor: k ? "pointer" : "default", whiteSpace: "nowrap", userSelect: "none" }}>{l}{sortF===k?(sortD==="asc"?" ↑":" ↓"):""}</th>
+              <th key={k||l} onClick={() => k && ts(k)} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.inkSec, textTransform: "uppercase", letterSpacing: 0.5, cursor: k ? "pointer" : "default", whiteSpace: "nowrap", userSelect: "none", fontFamily: F.sans }}>{l}{sortF===k?(sortD==="asc"?" ↑":" ↓"):""}</th>
             ))}
           </tr></thead>
           <tbody>{pg.map(lead => {
             const p = getPriority(lead.score || 0); const sc = PIPELINE_COLUMNS.find(c => c.id === lead.stage);
             return (
-              <tr key={lead.id} onClick={() => onSelect(lead)} style={{ borderBottom: "1px solid rgba(205,127,50,0.06)", cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(205,127,50,0.05)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, color: S.textPrimary, maxWidth: 220 }}>{lead.venue_name}</td>
-                <td style={{ padding: "10px 14px", fontSize: 12, color: S.textSecondary }}>{lead.city}{lead.county && lead.county !== "Greater London" ? `, ${lead.county}` : ""}</td>
-                <td style={{ padding: "10px 14px" }}><span style={tag(S.bronze)}>{lead.category}</span></td>
-                <td style={{ padding: "10px 14px", fontSize: 12, color: S.textSecondary }}>{lead.capacity || "—"}</td>
-                <td style={{ padding: "10px 14px", fontSize: 12, color: S.textSecondary }}>{lead.distance_from_london_miles === 0 ? "Central" : `${lead.distance_from_london_miles}mi`}</td>
-                <td style={{ padding: "10px 14px" }}><span style={{ fontSize: 12, fontWeight: 800, padding: "2px 8px", borderRadius: 6, background: `${p.color}22`, color: p.color }}>{lead.score}</span></td>
-                <td style={{ padding: "10px 14px" }}><select value={lead.stage} onClick={e => e.stopPropagation()} onChange={e => onMove(lead.id, e.target.value)} style={{ background: `${sc?.color || S.copper}15`, color: sc?.color || S.copper, border: `1px solid ${sc?.color || S.copper}33`, borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", outline: "none" }}>{PIPELINE_COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></td>
-                <td style={{ padding: "10px 14px" }}><button onClick={e => { e.stopPropagation(); onPitch(lead); }} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(205,127,50,0.3)", background: "transparent", color: S.copperLight, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✦ Pitch</button></td>
+              <tr key={lead.id} onClick={() => onSelect(lead)} style={{ borderBottom: `1px solid ${C.borderLight}`, cursor: "pointer", transition: "background .15s" }} onMouseEnter={e => e.currentTarget.style.background = C.accentSubtle} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, color: C.ink, maxWidth: 220, fontFamily: F.sans }}>{lead.venue_name}</td>
+                <td style={{ padding: "10px 14px", fontSize: 12, color: C.inkSec }}>{lead.city}{lead.county && lead.county !== "Greater London" ? `, ${lead.county}` : ""}</td>
+                <td style={{ padding: "10px 14px" }}><span style={tag(sc?.color || C.info)}>{lead.category}</span></td>
+                <td style={{ padding: "10px 14px", fontSize: 12, color: C.inkSec }}>{lead.capacity || "—"}</td>
+                <td style={{ padding: "10px 14px", fontSize: 12, color: C.inkSec }}>{lead.distance_from_london_miles === 0 ? "Central" : `${lead.distance_from_london_miles}mi`}</td>
+                <td style={{ padding: "10px 14px" }}><span style={{ ...pillStyle(`${p.color}12`, p.color) }}>{lead.score}</span></td>
+                <td style={{ padding: "10px 14px" }}><select value={lead.stage} onClick={e => e.stopPropagation()} onChange={e => onMove(lead.id, e.target.value)} style={{ background: `${sc?.color || C.accent}08`, color: sc?.color || C.accent, border: `1px solid ${sc?.color || C.accent}25`, borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", outline: "none", fontFamily: F.sans }}>{PIPELINE_COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></td>
+                <td style={{ padding: "10px 14px" }}><button onClick={e => { e.stopPropagation(); onPitch(lead); }} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.accent}33`, background: C.accentSubtle, color: C.accent, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.sans }}>Pitch</button></td>
               </tr>
             );
           })}</tbody>
         </table>
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid rgba(205,127,50,0.1)" }}>
-        <span style={{ fontSize: 12, color: S.textMuted }}>Showing {page*PP+1}-{Math.min((page+1)*PP, sorted.length)} of {sorted.length}</span>
-        <div style={{ display: "flex", gap: 4 }}>
-          <button onClick={() => setPage(p => Math.max(0, p-1))} disabled={page===0} style={pgBtn}>←</button>
-          <span style={{ padding: "4px 10px", fontSize: 12, color: S.textSecondary }}>{page+1}/{tp}</span>
-          <button onClick={() => setPage(p => Math.min(tp-1, p+1))} disabled={page>=tp-1} style={pgBtn}>→</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: `1px solid ${C.border}`, background: C.bgWarm }}>
+        <span style={{ fontSize: 12, color: C.inkMuted }}>Showing {page*PP+1}–{Math.min((page+1)*PP, sorted.length)} of {sorted.length}</span>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <button onClick={() => setPage(p => Math.max(0, p-1))} disabled={page===0} style={{...pgBtn, opacity: page===0 ? 0.4 : 1}}>←</button>
+          <span style={{ padding: "4px 10px", fontSize: 12, color: C.inkSec, fontFamily: F.sans }}>{page+1}/{tp}</span>
+          <button onClick={() => setPage(p => Math.min(tp-1, p+1))} disabled={page>=tp-1} style={{...pgBtn, opacity: page>=tp-1 ? 0.4 : 1}}>→</button>
         </div>
       </div>
     </div>
@@ -338,33 +367,33 @@ function StatsView({ leads, stats }) {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-      <div style={{ ...S.glass, borderRadius: 14, padding: 20 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: S.copperLight, margin: "0 0 16px" }}>Score Distribution</h3>
+      <div style={{ ...cardStyle({ padding: 20 }) }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Score Distribution</h3>
         {scoreDist.map(([r, c]) => (
           <div key={r} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: S.textSecondary, width: 50 }}>{r}</span>
-            <div style={{ flex: 1, height: 20, background: "rgba(20,18,14,0.8)", borderRadius: 6, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 6, width: `${(c / leads.length) * 100}%`, background: `linear-gradient(90deg, ${S.copper}, ${S.copperLight})` }} />
+            <span style={{ fontSize: 12, color: C.inkSec, width: 50, fontFamily: F.mono }}>{r}</span>
+            <div style={{ flex: 1, height: 20, background: C.bgWarm, borderRadius: 6, overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 6, width: `${(c / leads.length) * 100}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})` }} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: S.textPrimary, width: 30, textAlign: "right" }}>{c}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: C.ink, width: 30, textAlign: "right", fontFamily: F.mono }}>{c}</span>
           </div>
         ))}
       </div>
-      <div style={{ ...S.glass, borderRadius: 14, padding: 20 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: S.copperLight, margin: "0 0 16px" }}>By Category</h3>
-        {byCat.map(([cat, n]) => <div key={cat} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(205,127,50,0.06)" }}><span style={{ fontSize: 13, color: S.textPrimary }}>{cat}</span><span style={{ fontSize: 13, fontWeight: 700, color: S.copperLight }}>{n}</span></div>)}
+      <div style={{ ...cardStyle({ padding: 20 }) }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>By Category</h3>
+        {byCat.map(([cat, n]) => <div key={cat} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.borderLight}` }}><span style={{ fontSize: 13, color: C.ink }}>{cat}</span><span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{n}</span></div>)}
       </div>
-      <div style={{ ...S.glass, borderRadius: 14, padding: 20 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: S.copperLight, margin: "0 0 16px" }}>By County / Region</h3>
-        {byCo.map(([co, n]) => <div key={co} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(205,127,50,0.06)" }}><span style={{ fontSize: 13, color: S.textPrimary }}>{co}</span><span style={{ fontSize: 13, fontWeight: 700, color: S.copperLight }}>{n}</span></div>)}
+      <div style={{ ...cardStyle({ padding: 20 }) }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>By County / Region</h3>
+        {byCo.map(([co, n]) => <div key={co} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.borderLight}` }}><span style={{ fontSize: 13, color: C.ink }}>{co}</span><span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{n}</span></div>)}
       </div>
-      <div style={{ ...S.glass, borderRadius: 14, padding: 20 }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: S.copperLight, margin: "0 0 16px" }}>Pipeline Summary</h3>
+      <div style={{ ...cardStyle({ padding: 20 }) }}>
+        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Pipeline Summary</h3>
         {PIPELINE_COLUMNS.map(col => { const c = stats.byStage[col.id]||0; return (
           <div key={col.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
             <div style={{ width: 10, height: 10, borderRadius: 3, background: col.color }} />
-            <span style={{ fontSize: 13, color: S.textPrimary, flex: 1 }}>{col.label}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: col.color }}>{c}</span>
+            <span style={{ fontSize: 13, color: C.ink, flex: 1 }}>{col.label}</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: col.color }}>{c}</span>
           </div>
         ); })}
       </div>
@@ -379,20 +408,20 @@ function PitchModal({ venue, onClose }) {
   useEffect(() => { const t = setTimeout(() => setPitch(generatePitch(venue)), 800); return () => clearTimeout(t); }, [venue]);
   const copy = () => { if (pitch) { navigator.clipboard.writeText(`Subject: ${pitch.subject}\n\n${pitch.body}`); setCopied(true); setTimeout(() => setCopied(false), 2000); } };
   return (
-    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...S.glass, width: 720, maxHeight: "90vh", overflow: "auto", borderRadius: 20, border: "1px solid rgba(205,127,50,0.2)", boxShadow: "0 25px 80px rgba(0,0,0,0.6)" }}>
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(205,127,50,0.1)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div><div style={{ fontSize: 11, fontWeight: 700, color: S.copper, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>✦ AI Triple Win Pitch</div><div style={{ fontSize: 17, fontWeight: 700, color: S.textPrimary }}>{venue.venue_name}</div></div>
+    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...cardStyle({ padding: 0, width: 720, maxHeight: "90vh", overflow: "auto", borderRadius: 14, boxShadow: "0 25px 60px rgba(0,0,0,0.15)" }) }}>
+      <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bgWarm }}>
+        <div><div style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4, fontFamily: F.sans }}>AI Triple Win Pitch</div><div style={{ fontSize: 17, fontWeight: 700, color: C.ink, fontFamily: F.serif }}>{venue.venue_name}</div></div>
         <button onClick={onClose} style={closeBtn}>✕</button>
       </div>
       <div style={{ padding: 24 }}>
-        {!pitch ? <div style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 14, color: S.copperLight }}>Generating personalised pitch...</div></div> : <>
-          <div style={{ padding: "12px 16px", borderRadius: 10, marginBottom: 16, background: "rgba(205,127,50,0.08)", border: "1px solid rgba(205,127,50,0.15)" }}>
-            <span style={{ fontSize: 11, color: S.textMuted }}>Subject: </span><span style={{ fontSize: 13, fontWeight: 600, color: S.copperLight }}>{pitch.subject}</span>
+        {!pitch ? <div style={{ textAlign: "center", padding: 40 }}><div style={{ fontSize: 14, color: C.accent }}>Generating personalised pitch...</div></div> : <>
+          <div style={{ padding: "12px 16px", borderRadius: 8, marginBottom: 16, background: C.accentSubtle, border: `1px solid ${C.accent}20` }}>
+            <span style={{ fontSize: 11, color: C.inkMuted, fontFamily: F.sans }}>Subject: </span><span style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>{pitch.subject}</span>
           </div>
-          <div style={{ padding: "16px 20px", borderRadius: 12, background: "rgba(15,12,10,0.6)", border: "1px solid rgba(205,127,50,0.08)", fontFamily: "'Georgia', serif", fontSize: 13, lineHeight: 1.8, color: S.textPrimary, whiteSpace: "pre-wrap" }}>{pitch.body}</div>
+          <div style={{ padding: "20px 24px", borderRadius: 10, background: C.bgWarm, border: `1px solid ${C.borderLight}`, fontFamily: F.serif, fontSize: 13, lineHeight: 1.8, color: C.ink, whiteSpace: "pre-wrap" }}>{pitch.body}</div>
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-            <button onClick={copy} style={btnPrimary}>{copied ? "✓ Copied!" : "Copy to Clipboard"}</button>
-            <button onClick={onClose} style={btnGhost}>Close</button>
+            <button onClick={copy} style={btnPrimary}>{copied ? "Copied!" : "Copy to Clipboard"}</button>
+            <button onClick={onClose} style={btnOutline}>Close</button>
           </div>
         </>}
       </div>
@@ -408,48 +437,48 @@ function DetailModal({ lead, onClose, onUpdate, onDelete, onMove, onPitch }) {
   const addAct = () => { if (!newNote.trim()) return; const a = { type: actType, text: newNote.trim(), date: new Date().toISOString(), by: "Joe Stokoe" }; onUpdate(lead.id, { activities: [...(lead.activities || []), a] }); setNewNote(""); };
 
   return (
-    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...S.glass, width: 640, maxHeight: "90vh", overflow: "auto", borderRadius: 20, border: "1px solid rgba(205,127,50,0.2)", boxShadow: "0 25px 80px rgba(0,0,0,0.6)" }}>
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(205,127,50,0.1)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div><div style={{ fontSize: 20, fontWeight: 800, color: S.textPrimary }}>{lead.venue_name}</div><div style={{ fontSize: 13, color: S.textSecondary, marginTop: 4 }}>{lead.location || lead.city} · {lead.distance_from_london_miles === 0 ? "Central London" : `${lead.distance_from_london_miles} miles`}</div></div>
-        <div style={{ display: "flex", gap: 8 }}><div style={{ padding: "4px 12px", borderRadius: 8, fontWeight: 800, fontSize: 14, background: `${p.color}22`, color: p.color }}>{lead.score}</div><button onClick={onClose} style={closeBtn}>✕</button></div>
+    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...cardStyle({ padding: 0, width: 640, maxHeight: "90vh", overflow: "auto", borderRadius: 14, boxShadow: "0 25px 60px rgba(0,0,0,0.15)" }) }}>
+      <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "flex-start", background: C.bgWarm }}>
+        <div><div style={{ fontSize: 20, fontWeight: 800, color: C.ink, fontFamily: F.serif }}>{lead.venue_name}</div><div style={{ fontSize: 13, color: C.inkSec, marginTop: 4 }}>{lead.location || lead.city} · {lead.distance_from_london_miles === 0 ? "Central London" : `${lead.distance_from_london_miles} miles`}</div></div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}><div style={{ ...pillStyle(`${p.color}12`, p.color), fontSize: 14, fontWeight: 800 }}>{lead.score}</div><button onClick={onClose} style={closeBtn}>✕</button></div>
       </div>
       <div style={{ padding: 24 }}>
-        {/* Stage buttons */}
+        {/* Stage buttons — FIXED: these now properly move the lead */}
         <div style={{ display: "flex", gap: 4, marginBottom: 20 }}>
-          {PIPELINE_COLUMNS.map(col => <button key={col.id} onClick={() => onMove(lead.id, col.id)} style={{ flex: 1, padding: "6px 4px", borderRadius: 8, fontSize: 10, fontWeight: 700, cursor: "pointer", border: lead.stage === col.id ? `2px solid ${col.color}` : "1px solid rgba(205,127,50,0.1)", background: lead.stage === col.id ? `${col.color}22` : "transparent", color: lead.stage === col.id ? col.color : S.textMuted }}>{col.label}</button>)}
+          {PIPELINE_COLUMNS.map(col => <button key={col.id} onClick={() => onMove(lead.id, col.id)} style={{ flex: 1, padding: "7px 4px", borderRadius: 6, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: F.sans, border: lead.stage === col.id ? `2px solid ${col.color}` : `1px solid ${C.border}`, background: lead.stage === col.id ? `${col.color}12` : C.card, color: lead.stage === col.id ? col.color : C.inkMuted, transition: "all .15s" }}>{col.label}</button>)}
         </div>
         {/* Info */}
-        <div style={{ ...S.glass, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <div style={{ ...cardStyle({ padding: 16, marginBottom: 16, background: C.bgWarm }) }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             {[["Category", lead.category], ["Capacity", lead.capacity ? `${lead.capacity} pax` : "—"], ["Website", lead.website || "—"], ["Assigned", lead.assigned_to || "Unassigned"]].map(([l, v]) => (
-              <div key={l}><div style={{ fontSize: 10, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 2 }}>{l}</div><div style={{ fontSize: 13, color: S.textPrimary }}>{v}</div></div>
+              <div key={l}><div style={{ ...lbl, marginBottom: 2 }}>{l}</div><div style={{ fontSize: 13, color: C.ink }}>{v}</div></div>
             ))}
           </div>
-          {lead.trigger_event && <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(205,127,50,0.08)" }}><div style={{ fontSize: 10, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Trigger / Notes</div><div style={{ fontSize: 12, color: S.textSecondary, lineHeight: 1.5 }}>{lead.trigger_event}</div></div>}
+          {lead.trigger_event && <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.borderLight}` }}><div style={{ ...lbl, marginBottom: 4 }}>Trigger / Notes</div><div style={{ fontSize: 12, color: C.inkSec, lineHeight: 1.5 }}>{lead.trigger_event}</div></div>}
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-          <select value={lead.assigned_to || ""} onChange={e => onUpdate(lead.id, { assigned_to: e.target.value })} style={{ ...selStyle, flex: 1 }}><option value="">Assign to...</option>{TEAM.map(t => <option key={t} value={t}>{t}</option>)}</select>
-          <button onClick={() => onPitch(lead)} style={btnPrimary}>✦ Generate Pitch</button>
+          <select value={lead.assigned_to || ""} onChange={e => onUpdate(lead.id, { assigned_to: e.target.value })} style={{ ...selectStyle, flex: 1 }}><option value="">Assign to...</option>{TEAM.map(t => <option key={t} value={t}>{t}</option>)}</select>
+          <button onClick={() => onPitch(lead)} style={btnAccent}>Generate Pitch</button>
         </div>
         {/* Activity */}
-        <div style={{ ...S.glass, borderRadius: 12, padding: 16 }}>
-          <h4 style={{ fontSize: 13, fontWeight: 700, color: S.copperLight, margin: "0 0 10px" }}>Activity Log</h4>
+        <div style={{ ...cardStyle({ padding: 16 }) }}>
+          <h4 style={{ fontSize: 14, fontWeight: 700, color: C.ink, margin: "0 0 10px", fontFamily: F.serif }}>Activity Log</h4>
           <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-            {["note","call","email","meeting"].map(t => <button key={t} onClick={() => setActType(t)} style={{ padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", border: actType === t ? `1px solid ${S.copper}` : "1px solid rgba(205,127,50,0.1)", background: actType === t ? "rgba(205,127,50,0.15)" : "transparent", color: actType === t ? S.copperLight : S.textMuted }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+            {["note","call","email","meeting"].map(t => <button key={t} onClick={() => setActType(t)} style={{ padding: "4px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.sans, border: actType === t ? `1px solid ${C.accent}` : `1px solid ${C.border}`, background: actType === t ? C.accentSubtle : C.card, color: actType === t ? C.accent : C.inkMuted }}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => e.key === "Enter" && addAct()} placeholder="Log activity..." style={{ flex: 1, padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(205,127,50,0.15)", background: S.bgInput, color: S.textPrimary, fontSize: 12, outline: "none" }} />
+            <input value={newNote} onChange={e => setNewNote(e.target.value)} onKeyDown={e => e.key === "Enter" && addAct()} placeholder="Log activity..." style={{ ...inputStyle, flex: 1 }} />
             <button onClick={addAct} style={btnPrimary}>Add</button>
           </div>
           {(lead.activities || []).length > 0 && <div style={{ marginTop: 14 }}>
-            {[...(lead.activities || [])].reverse().map((a, i) => <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: "1px solid rgba(205,127,50,0.05)" }}>
-              <div style={{ width: 6, height: 6, borderRadius: 3, background: S.copper, marginTop: 5, flexShrink: 0 }} />
-              <div><div style={{ fontSize: 12, color: S.textPrimary }}>{a.text}</div><div style={{ fontSize: 10, color: S.textMuted, marginTop: 2 }}>{a.type} · {a.by} · {new Date(a.date).toLocaleDateString("en-GB")}</div></div>
+            {[...(lead.activities || [])].reverse().map((a, i) => <div key={i} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+              <div style={{ width: 6, height: 6, borderRadius: 3, background: C.accent, marginTop: 5, flexShrink: 0 }} />
+              <div><div style={{ fontSize: 12, color: C.ink }}>{a.text}</div><div style={{ fontSize: 10, color: C.inkMuted, marginTop: 2 }}>{a.type} · {a.by} · {new Date(a.date).toLocaleDateString("en-GB")}</div></div>
             </div>)}
           </div>}
         </div>
         <div style={{ marginTop: 16, textAlign: "right" }}>
-          <button onClick={() => { if (confirm("Delete this lead permanently?")) onDelete(lead.id); }} style={{ padding: "6px 16px", borderRadius: 8, border: "1px solid rgba(255,68,68,0.2)", background: "rgba(255,68,68,0.08)", color: "#FF4444", fontSize: 12, cursor: "pointer" }}>Delete Lead</button>
+          <button onClick={() => { if (confirm("Delete this lead permanently?")) onDelete(lead.id); }} style={btnDanger}>Delete Lead</button>
         </div>
       </div>
     </div></div>
@@ -459,25 +488,24 @@ function DetailModal({ lead, onClose, onUpdate, onDelete, onMove, onPitch }) {
 // ═══ ADD MODAL ═══
 function AddModal({ onClose, onAdd }) {
   const [f, setF] = useState({ venue_name: "", location: "", city: "", county: "", category: "Wedding Venue", capacity: "", distance_from_london_miles: "", website: "", trigger_event: "", contact_email: "", phone: "" });
-  const fs = { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(205,127,50,0.15)", background: S.bgInput, color: S.textPrimary, fontSize: 13, outline: "none", boxSizing: "border-box" };
   return (
-    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...S.glass, width: 500, borderRadius: 20, border: "1px solid rgba(205,127,50,0.2)", boxShadow: "0 25px 80px rgba(0,0,0,0.6)" }}>
-      <div style={{ padding: "20px 24px", borderBottom: "1px solid rgba(205,127,50,0.1)", display: "flex", justifyContent: "space-between" }}><h3 style={{ fontSize: 17, fontWeight: 700, color: S.textPrimary, margin: 0 }}>Add New Venue Lead</h3><button onClick={onClose} style={closeBtn}>✕</button></div>
+    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...cardStyle({ padding: 0, width: 500, borderRadius: 14, boxShadow: "0 25px 60px rgba(0,0,0,0.15)" }) }}>
+      <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", background: C.bgWarm }}><h3 style={{ fontSize: 17, fontWeight: 700, color: C.ink, margin: 0, fontFamily: F.serif }}>Add New Venue Lead</h3><button onClick={onClose} style={closeBtn}>✕</button></div>
       <div style={{ padding: 24, display: "grid", gap: 12 }}>
-        <div><label style={lbl}>Venue Name *</label><input value={f.venue_name} onChange={e => setF({...f, venue_name: e.target.value})} style={fs} /></div>
+        <div><label style={lbl}>Venue Name *</label><input value={f.venue_name} onChange={e => setF({...f, venue_name: e.target.value})} style={inputStyle} /></div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div><label style={lbl}>City</label><input value={f.city} onChange={e => setF({...f, city: e.target.value})} style={fs} /></div>
-          <div><label style={lbl}>County</label><input value={f.county} onChange={e => setF({...f, county: e.target.value})} style={fs} /></div>
+          <div><label style={lbl}>City</label><input value={f.city} onChange={e => setF({...f, city: e.target.value})} style={inputStyle} /></div>
+          <div><label style={lbl}>County</label><input value={f.county} onChange={e => setF({...f, county: e.target.value})} style={inputStyle} /></div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-          <div><label style={lbl}>Category</label><select value={f.category} onChange={e => setF({...f, category: e.target.value})} style={{...fs, cursor:"pointer"}}>{["Wedding Venue","Country Estate","Historic Hall","Event Space","Barn Venue","Livery Hall","Museum/Gallery","Castle","Conference Centre"].map(c => <option key={c}>{c}</option>)}</select></div>
-          <div><label style={lbl}>Capacity</label><input type="number" value={f.capacity} onChange={e => setF({...f, capacity: e.target.value})} style={fs} /></div>
-          <div><label style={lbl}>Miles from London</label><input type="number" value={f.distance_from_london_miles} onChange={e => setF({...f, distance_from_london_miles: e.target.value})} style={fs} /></div>
+          <div><label style={lbl}>Category</label><select value={f.category} onChange={e => setF({...f, category: e.target.value})} style={selectStyle}>{["Wedding Venue","Country Estate","Historic Hall","Event Space","Barn Venue","Livery Hall","Museum/Gallery","Castle","Conference Centre"].map(c => <option key={c}>{c}</option>)}</select></div>
+          <div><label style={lbl}>Capacity</label><input type="number" value={f.capacity} onChange={e => setF({...f, capacity: e.target.value})} style={inputStyle} /></div>
+          <div><label style={lbl}>Miles from London</label><input type="number" value={f.distance_from_london_miles} onChange={e => setF({...f, distance_from_london_miles: e.target.value})} style={inputStyle} /></div>
         </div>
-        <div><label style={lbl}>Website</label><input value={f.website} onChange={e => setF({...f, website: e.target.value})} style={fs} /></div>
-        <div><label style={lbl}>Trigger / Notes</label><textarea value={f.trigger_event} onChange={e => setF({...f, trigger_event: e.target.value})} rows={3} style={{...fs, resize:"vertical"}} /></div>
+        <div><label style={lbl}>Website</label><input value={f.website} onChange={e => setF({...f, website: e.target.value})} style={inputStyle} /></div>
+        <div><label style={lbl}>Trigger / Notes</label><textarea value={f.trigger_event} onChange={e => setF({...f, trigger_event: e.target.value})} rows={3} style={{...inputStyle, resize:"vertical"}} /></div>
         <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-          <button onClick={onClose} style={btnGhost}>Cancel</button>
+          <button onClick={onClose} style={btnOutline}>Cancel</button>
           <button onClick={() => { if(!f.venue_name.trim()) return; onAdd({...f, capacity: parseInt(f.capacity)||0, distance_from_london_miles: parseInt(f.distance_from_london_miles)||0}); }} style={btnPrimary}>Add Lead</button>
         </div>
       </div>
@@ -487,19 +515,9 @@ function AddModal({ onClose, onAdd }) {
 
 function ModalWrap({ title, onClose, children }) {
   return (
-    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...S.glass, width: 600, maxHeight: "85vh", overflow: "auto", borderRadius: 20, border: "1px solid rgba(205,127,50,0.2)", boxShadow: "0 25px 80px rgba(0,0,0,0.6)", padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><h3 style={{ fontSize: 17, fontWeight: 700, color: S.textPrimary, margin: 0 }}>{title}</h3><button onClick={onClose} style={closeBtn}>✕</button></div>
+    <div style={overlay} onClick={onClose}><div onClick={e => e.stopPropagation()} style={{ ...cardStyle({ padding: 24, width: 600, maxHeight: "85vh", overflow: "auto", borderRadius: 14, boxShadow: "0 25px 60px rgba(0,0,0,0.15)" }) }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}><h3 style={{ fontSize: 17, fontWeight: 700, color: C.ink, margin: 0, fontFamily: F.serif }}>{title}</h3><button onClick={onClose} style={closeBtn}>✕</button></div>
       {children}
     </div></div>
   );
 }
-
-// ═══ SHARED STYLES ═══
-const overlay = { position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 };
-const closeBtn = { width: 32, height: 32, borderRadius: 8, border: "1px solid rgba(205,127,50,0.15)", background: "rgba(30,25,20,0.6)", color: S.textSecondary, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" };
-const btnPrimary = { padding: "8px 18px", borderRadius: 10, border: "1px solid rgba(205,127,50,0.4)", background: "linear-gradient(135deg, rgba(205,127,50,0.2), rgba(184,115,51,0.15))", color: "#D4A844", fontSize: 13, fontWeight: 700, cursor: "pointer" };
-const btnGhost = { padding: "8px 14px", borderRadius: 10, border: "1px solid rgba(205,127,50,0.15)", background: "transparent", color: "#9a8e7f", fontSize: 13, fontWeight: 600, cursor: "pointer" };
-const selStyle = { padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(205,127,50,0.15)", background: "rgba(20,18,14,0.8)", color: "#e8e0d4", fontSize: 13, outline: "none", cursor: "pointer" };
-const lbl = { fontSize: 11, fontWeight: 700, color: "#9a8e7f", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" };
-const pgBtn = { padding: "4px 10px", borderRadius: 6, border: "1px solid rgba(205,127,50,0.15)", background: "transparent", color: "#9a8e7f", fontSize: 12, cursor: "pointer" };
-function tag(color) { return { display: "inline-block", padding: "2px 7px", borderRadius: 5, fontSize: 10, fontWeight: 600, background: `${color}15`, color, border: `1px solid ${color}25` }; }
