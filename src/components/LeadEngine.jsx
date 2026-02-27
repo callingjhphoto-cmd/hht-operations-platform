@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { VENUE_DATABASE } from "../lib/venueData";
 import CSVImport from "./CSVImport";
+import CountyMap from "./CountyMap";
 
 // ═══════════════════════════════════════════════════════════════
 // HH&T Lead Generation CRM — White Editorial Design
@@ -142,10 +143,11 @@ export default function LeadEngineCRM() {
   const [leads, setLeads] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [pitchModal, setPitchModal] = useState(null);
-  const [view, setView] = useState("kanban");
+  const [view, setView] = useState("map");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterDistance, setFilterDistance] = useState("all");
+  const [filterCounty, setFilterCounty] = useState("All");
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [dragItem, setDragItem] = useState(null);
@@ -189,12 +191,23 @@ export default function LeadEngineCRM() {
         if (!(l.venue_name || "").toLowerCase().includes(q) && !(l.city || "").toLowerCase().includes(q) && !(l.county || "").toLowerCase().includes(q) && !(l.category || "").toLowerCase().includes(q)) return false;
       }
       if (filterCategory !== "All" && l.category !== filterCategory) return false;
+      if (filterCounty !== "All" && l.county !== filterCounty) return false;
       if (filterDistance === "close" && l.distance_from_london_miles > 30) return false;
       if (filterDistance === "medium" && (l.distance_from_london_miles <= 30 || l.distance_from_london_miles > 60)) return false;
       if (filterDistance === "far" && l.distance_from_london_miles <= 60) return false;
       return true;
     });
-  }, [leads, searchTerm, filterCategory, filterDistance]);
+  }, [leads, searchTerm, filterCategory, filterCounty, filterDistance]);
+
+  const counties = useMemo(() => {
+    const c = [...new Set(leads.map(l => l.county).filter(Boolean))].sort();
+    return ["All", ...c];
+  }, [leads]);
+
+  const handleCountyClick = useCallback((county) => {
+    setFilterCounty(county);
+    setView("table");
+  }, []);
 
   const stats = useMemo(() => {
     const byStage = {}; PIPELINE_COLUMNS.forEach(c => { byStage[c.id] = 0; });
@@ -213,7 +226,9 @@ export default function LeadEngineCRM() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
             <h2 style={{ fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, fontFamily: F.serif }}>Lead Engine</h2>
-            <p style={{ color: C.inkMuted, fontSize: 13, margin: "4px 0 0" }}>{stats.total} venues · Avg score {stats.avgScore} · {(stats.byStage.warm_reply || 0) + (stats.byStage.converted || 0)} warm+</p>
+            <p style={{ color: C.inkMuted, fontSize: 13, margin: "4px 0 0" }}>
+              {filterCounty !== "All" ? `${filteredLeads.length} venues in ${filterCounty}` : `${stats.total} venues`} · Avg score {stats.avgScore} · {(stats.byStage.warm_reply || 0) + (stats.byStage.converted || 0)} warm+
+            </p>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => setShowCSVImport(true)} style={btnOutline}>Import CSV</button>
@@ -223,15 +238,25 @@ export default function LeadEngineCRM() {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", background: C.bgWarm, borderRadius: 8, padding: 3, border: `1px solid ${C.borderLight}` }}>
-            {["kanban", "table", "stats"].map(v => (
-              <button key={v} onClick={() => setView(v)} style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F.sans, background: view === v ? C.card : "transparent", color: view === v ? C.ink : C.inkMuted, boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all .2s" }}>{v.charAt(0).toUpperCase() + v.slice(1)}</button>
+            {["map", "kanban", "table", "stats"].map(v => (
+              <button key={v} onClick={() => { setView(v); if (v === "map") setFilterCounty("All"); }} style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F.sans, background: view === v ? C.card : "transparent", color: view === v ? C.ink : C.inkMuted, boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all .2s" }}>
+                {v === "map" ? "🗺 Map" : v.charAt(0).toUpperCase() + v.slice(1)}
+              </button>
             ))}
           </div>
-          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search venues, cities, counties..." style={{ ...inputStyle, width: 260 }} />
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={selectStyle}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
-          <select value={filterDistance} onChange={e => setFilterDistance(e.target.value)} style={selectStyle}>
-            <option value="all">All distances</option><option value="close">Within 30 mi</option><option value="medium">30–60 mi</option><option value="far">60+ mi</option>
-          </select>
+          {view !== "map" && <>
+            <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search venues, cities, counties..." style={{ ...inputStyle, width: 220 }} />
+            <select value={filterCounty} onChange={e => setFilterCounty(e.target.value)} style={selectStyle}>
+              {counties.map(c => <option key={c} value={c}>{c === "All" ? "All counties" : c}</option>)}
+            </select>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={selectStyle}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <select value={filterDistance} onChange={e => setFilterDistance(e.target.value)} style={selectStyle}>
+              <option value="all">All distances</option><option value="close">Within 30 mi</option><option value="medium">30–60 mi</option><option value="far">60+ mi</option>
+            </select>
+            {filterCounty !== "All" && (
+              <button onClick={() => setFilterCounty("All")} style={{ ...btnGhost, color: C.danger, fontSize: 12 }}>✕ Clear {filterCounty}</button>
+            )}
+          </>}
         </div>
       </div>
 
@@ -250,6 +275,7 @@ export default function LeadEngineCRM() {
 
       {/* CONTENT */}
       <div>
+        {view === "map" && <CountyMap leads={leads} onCountyClick={handleCountyClick} />}
         {view === "kanban" && <KanbanView leads={filteredLeads} onDragStart={handleDragStart} onDrop={handleDrop} onDragOver={handleDragOver} onSelect={setSelectedLead} onPitch={setPitchModal} onMove={moveToStage} />}
         {view === "table" && <TableView leads={filteredLeads} onSelect={setSelectedLead} onMove={moveToStage} onPitch={setPitchModal} />}
         {view === "stats" && <StatsView leads={leads} stats={stats} />}
