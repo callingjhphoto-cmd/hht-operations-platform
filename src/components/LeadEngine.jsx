@@ -153,7 +153,7 @@ export default function LeadEngineCRM() {
   const [dragItem, setDragItem] = useState(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("hht_pipeline_v2");
+    const stored = localStorage.getItem("hht_pipeline_v3");
     if (stored) { try { setLeads(JSON.parse(stored)); return; } catch {} }
     initFromDB();
   }, []);
@@ -165,10 +165,10 @@ export default function LeadEngineCRM() {
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }));
     setLeads(enriched);
-    localStorage.setItem("hht_pipeline_v2", JSON.stringify(enriched));
+    localStorage.setItem("hht_pipeline_v3", JSON.stringify(enriched));
   }
 
-  useEffect(() => { if (leads.length > 0) localStorage.setItem("hht_pipeline_v2", JSON.stringify(leads)); }, [leads]);
+  useEffect(() => { if (leads.length > 0) localStorage.setItem("hht_pipeline_v3", JSON.stringify(leads)); }, [leads]);
 
   const updateLead = useCallback((id, updates) => {
     setLeads(prev => prev.map(l => l.id === id ? { ...l, ...updates, updated_at: new Date().toISOString() } : l));
@@ -233,7 +233,7 @@ export default function LeadEngineCRM() {
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => setShowCSVImport(true)} style={btnOutline}>Import CSV</button>
             <button onClick={() => setShowAddForm(true)} style={btnOutline}>+ Add Lead</button>
-            <button onClick={() => { localStorage.removeItem("hht_pipeline_v2"); initFromDB(); }} style={btnGhost}>Reset</button>
+            <button onClick={() => { localStorage.removeItem("hht_pipeline_v3"); initFromDB(); }} style={btnGhost}>Reset</button>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
