@@ -6,6 +6,11 @@ import { PARTNERSHIP_LEADS } from "../lib/partnershipLeads";
 import { UNIVERSITY_VENUE_LEADS, HOTEL_GROUP_LEADS, PR_AGENCY_LEADS } from "../lib/newBusinessLeads";
 import { CORPORATE_EXPERIENTIAL_LEADS } from "../lib/corporateExperientialLeads";
 import { NEW_VENUE_LEADS } from "../lib/newVenueLeads";
+import { VENUE_PARTNER_LEADS } from "../lib/venuePartnerLeads";
+import { THEATRE_CORPORATE_HIRE_LEADS, SHOPPING_CENTRE_EVENT_LEADS, PROPERTY_DEVELOPER_LEADS, AWARD_CEREMONY_PRODUCTION_LEADS } from "../lib/theatreRetailPropertyAwardsLeads";
+import { REFERRAL_PARTNER_LEADS } from "../lib/referralPartnerLeads";
+import { CONCIERGE_LIFESTYLE_LEADS, DMC_LEADS, ESTATE_FAMILY_OFFICE_LEADS, GOLF_CLUB_EVENT_LEADS } from "../lib/conciergeGolfEstateLeads";
+import { CONFERENCE_EXHIBITION_LEADS, SEASONAL_POPUP_LEADS, YACHT_BOAT_WATERFRONT_LEADS, COUNCIL_TOURISM_LEADS } from "../lib/specialistLeadsData";
 import CSVImport from "./CSVImport";
 import CountyMap from "./CountyMap";
 import AgentPanel from "./AgentPanel";
@@ -205,6 +210,20 @@ export default function LeadEngineCRM() {
       ...mapLeadSet(PR_AGENCY_LEADS, "pr"),
       ...mapLeadSet(CORPORATE_EXPERIENTIAL_LEADS, "corp"),
       ...mapLeadSet(NEW_VENUE_LEADS, "newvenue"),
+      ...mapLeadSet(VENUE_PARTNER_LEADS, "venuepartner"),
+      ...mapLeadSet(THEATRE_CORPORATE_HIRE_LEADS, "theatre"),
+      ...mapLeadSet(SHOPPING_CENTRE_EVENT_LEADS, "shopping"),
+      ...mapLeadSet(PROPERTY_DEVELOPER_LEADS, "propdev"),
+      ...mapLeadSet(AWARD_CEREMONY_PRODUCTION_LEADS, "awards"),
+      ...mapLeadSet(REFERRAL_PARTNER_LEADS, "referral"),
+      ...mapLeadSet(CONCIERGE_LIFESTYLE_LEADS, "concierge"),
+      ...mapLeadSet(DMC_LEADS, "dmc"),
+      ...mapLeadSet(ESTATE_FAMILY_OFFICE_LEADS, "estate"),
+      ...mapLeadSet(GOLF_CLUB_EVENT_LEADS, "golf"),
+      ...mapLeadSet(CONFERENCE_EXHIBITION_LEADS, "conference"),
+      ...mapLeadSet(SEASONAL_POPUP_LEADS, "popup"),
+      ...mapLeadSet(YACHT_BOAT_WATERFRONT_LEADS, "yacht"),
+      ...mapLeadSet(COUNCIL_TOURISM_LEADS, "council"),
     ];
     setLeads(enriched);
     localStorage.setItem("hht_pipeline_v3", JSON.stringify(enriched));
@@ -437,43 +456,254 @@ function TableView({ leads, onSelect, onMove, onPitch }) {
   );
 }
 
-// ═══ STATS ═══
+// ═══ STATS + INDUSTRY YIELD TRACKER ═══
 function StatsView({ leads, stats }) {
+  const [yieldSort, setYieldSort] = useState("hotRate");
   const byCat = useMemo(() => { const m = {}; leads.forEach(l => { m[l.category] = (m[l.category] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [leads]);
   const byCo = useMemo(() => { const m = {}; leads.forEach(l => { m[l.county || "Unknown"] = (m[l.county || "Unknown"] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [leads]);
   const scoreDist = useMemo(() => { const b = {"90-100":0,"80-89":0,"70-79":0,"60-69":0,"50-59":0,"<50":0}; leads.forEach(l => { const s=l.score||0; if(s>=90)b["90-100"]++;else if(s>=80)b["80-89"]++;else if(s>=70)b["70-79"]++;else if(s>=60)b["60-69"]++;else if(s>=50)b["50-59"]++;else b["<50"]++; }); return Object.entries(b); }, [leads]);
 
+  // ── Industry Yield Analysis ──
+  const industryYield = useMemo(() => {
+    const catMap = {};
+    leads.forEach(l => {
+      const cat = l.category || "Uncategorised";
+      if (!catMap[cat]) catMap[cat] = { total: 0, hot: 0, warm: 0, cold: 0, scores: [], values: [], stages: {}, counties: new Set() };
+      const entry = catMap[cat];
+      entry.total++;
+      const score = l.score || 0;
+      entry.scores.push(score);
+      if (l.est_value) entry.values.push(l.est_value);
+      if (score >= 70) entry.hot++;
+      else if (score >= 50) entry.warm++;
+      else entry.cold++;
+      const stage = l.stage || "scraped";
+      entry.stages[stage] = (entry.stages[stage] || 0) + 1;
+      if (l.county) entry.counties.add(l.county);
+    });
+
+    return Object.entries(catMap).map(([cat, data]) => {
+      const avgScore = data.scores.length > 0 ? Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length) : 0;
+      const avgValue = data.values.length > 0 ? Math.round(data.values.reduce((a, b) => a + b, 0) / data.values.length) : 0;
+      const hotRate = data.total > 0 ? Math.round((data.hot / data.total) * 100) : 0;
+      const warmRate = data.total > 0 ? Math.round((data.warm / data.total) * 100) : 0;
+      const coldRate = data.total > 0 ? Math.round((data.cold / data.total) * 100) : 0;
+      const pipelineDepth = (data.stages["contacted"] || 0) + (data.stages["meeting"] || 0) + (data.stages["proposal"] || 0) + (data.stages["won"] || 0);
+      const conversionRate = data.total > 0 ? Math.round((pipelineDepth / data.total) * 100) : 0;
+      const totalPipelineValue = data.values.reduce((a, b) => a + b, 0);
+      return { category: cat, ...data, avgScore, avgValue, hotRate, warmRate, coldRate, pipelineDepth, conversionRate, totalPipelineValue, countyCount: data.counties.size };
+    }).sort((a, b) => {
+      if (yieldSort === "hotRate") return b.hotRate - a.hotRate;
+      if (yieldSort === "avgScore") return b.avgScore - a.avgScore;
+      if (yieldSort === "total") return b.total - a.total;
+      if (yieldSort === "conversion") return b.conversionRate - a.conversionRate;
+      if (yieldSort === "value") return b.totalPipelineValue - a.totalPipelineValue;
+      return b.hotRate - a.hotRate;
+    });
+  }, [leads, yieldSort]);
+
+  const maxTotal = Math.max(...industryYield.map(i => i.total), 1);
+
+  // Summary stats for yield tracker header
+  const yieldSummary = useMemo(() => {
+    const hotCats = industryYield.filter(i => i.hotRate >= 50);
+    const coldCats = industryYield.filter(i => i.coldRate >= 60);
+    const bestCat = industryYield[0];
+    const totalPipeline = industryYield.reduce((sum, i) => sum + i.totalPipelineValue, 0);
+    return { hotCats: hotCats.length, coldCats: coldCats.length, bestCat, totalPipeline, totalCategories: industryYield.length };
+  }, [industryYield]);
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-      <div style={{ ...cardStyle({ padding: 20 }) }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Score Distribution</h3>
-        {scoreDist.map(([r, c]) => (
-          <div key={r} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: C.inkSec, width: 50, fontFamily: F.mono }}>{r}</span>
-            <div style={{ flex: 1, height: 20, background: C.bgWarm, borderRadius: 6, overflow: "hidden" }}>
-              <div style={{ height: "100%", borderRadius: 6, width: `${(c / leads.length) * 100}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})` }} />
+    <div>
+      {/* ═══ INDUSTRY YIELD TRACKER ═══ */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <h3 style={{ fontSize: 18, fontWeight: 800, color: C.ink, margin: 0, fontFamily: F.serif }}>Industry Yield Tracker</h3>
+            <p style={{ fontSize: 12, color: C.inkMuted, margin: "4px 0 0" }}>
+              Which industries produce the hottest leads for HHT
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 4, background: C.bgWarm, padding: 3, borderRadius: 6 }}>
+            {[
+              { id: "hotRate", label: "Hot %" },
+              { id: "avgScore", label: "Avg Score" },
+              { id: "total", label: "Volume" },
+              { id: "conversion", label: "Conversion" },
+              { id: "value", label: "Value" },
+            ].map(s => (
+              <button key={s.id} onClick={() => setYieldSort(s.id)} style={{
+                padding: "4px 10px", borderRadius: 4, border: "none", cursor: "pointer",
+                fontSize: 11, fontWeight: 600, fontFamily: F.sans,
+                background: yieldSort === s.id ? C.card : "transparent",
+                color: yieldSort === s.id ? C.ink : C.inkMuted,
+              }}>{s.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+          <div style={cardStyle({ padding: 16 })}>
+            <div style={{ fontSize: 10, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Total Industries</div>
+            <div style={{ fontSize: 28, fontWeight: 800, fontFamily: F.serif, color: C.ink }}>{yieldSummary.totalCategories}</div>
+          </div>
+          <div style={cardStyle({ padding: 16 })}>
+            <div style={{ fontSize: 10, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>High-Yield Industries</div>
+            <div style={{ fontSize: 28, fontWeight: 800, fontFamily: F.serif, color: C.success }}>{yieldSummary.hotCats}</div>
+            <div style={{ fontSize: 10, color: C.inkMuted }}>50%+ hot lead rate</div>
+          </div>
+          <div style={cardStyle({ padding: 16 })}>
+            <div style={{ fontSize: 10, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Cold Industries</div>
+            <div style={{ fontSize: 28, fontWeight: 800, fontFamily: F.serif, color: C.danger }}>{yieldSummary.coldCats}</div>
+            <div style={{ fontSize: 10, color: C.inkMuted }}>60%+ cold lead rate</div>
+          </div>
+          <div style={cardStyle({ padding: 16 })}>
+            <div style={{ fontSize: 10, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Total Pipeline Value</div>
+            <div style={{ fontSize: 28, fontWeight: 800, fontFamily: F.serif, color: C.accent }}>&pound;{yieldSummary.totalPipeline.toLocaleString()}</div>
+          </div>
+        </div>
+
+        {/* Industry Yield Bars */}
+        <div style={cardStyle({ padding: 0, overflow: "hidden" })}>
+          {/* Header */}
+          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr 60px 60px 60px 70px 80px", gap: 8, padding: "10px 16px", borderBottom: `1px solid ${C.border}`, background: C.bgWarm }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Industry</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Hot / Warm / Cold</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Total</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Hot %</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Avg</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Conv.</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Value</div>
+          </div>
+
+          {/* Rows */}
+          {industryYield.map((ind, idx) => {
+            const hotWidth = ind.total > 0 ? (ind.hot / ind.total) * 100 : 0;
+            const warmWidth = ind.total > 0 ? (ind.warm / ind.total) * 100 : 0;
+            const coldWidth = ind.total > 0 ? (ind.cold / ind.total) * 100 : 0;
+            const barScale = (ind.total / maxTotal) * 100;
+
+            return (
+              <div key={ind.category} style={{
+                display: "grid", gridTemplateColumns: "180px 1fr 60px 60px 60px 70px 80px", gap: 8,
+                padding: "10px 16px", alignItems: "center",
+                borderBottom: `1px solid ${C.borderLight}`,
+                background: idx % 2 === 0 ? "transparent" : C.bgWarm + "40",
+              }}>
+                {/* Category name */}
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ind.category}>
+                  {ind.category}
+                </div>
+
+                {/* Stacked bar */}
+                <div style={{ position: "relative", height: 22 }}>
+                  <div style={{ position: "absolute", inset: 0, background: C.bgWarm, borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ display: "flex", height: "100%", width: `${barScale}%` }}>
+                      {hotWidth > 0 && <div style={{ width: `${hotWidth}%`, background: "linear-gradient(90deg, #2B7A4B, #34D399)", height: "100%", transition: "width 0.5s" }} />}
+                      {warmWidth > 0 && <div style={{ width: `${warmWidth}%`, background: "linear-gradient(90deg, #B8922E, #F59E0B)", height: "100%", transition: "width 0.5s" }} />}
+                      {coldWidth > 0 && <div style={{ width: `${coldWidth}%`, background: "linear-gradient(90deg, #9B3535, #EF4444)", height: "100%", transition: "width 0.5s" }} />}
+                    </div>
+                  </div>
+                  {/* Overlay labels */}
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", paddingLeft: 6, gap: 4 }}>
+                    {ind.hot > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}>{ind.hot}</span>}
+                    {ind.warm > 0 && <span style={{ fontSize: 9, fontWeight: 700, color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}>{ind.warm}</span>}
+                  </div>
+                </div>
+
+                {/* Total */}
+                <div style={{ textAlign: "center", fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: F.mono }}>{ind.total}</div>
+
+                {/* Hot % */}
+                <div style={{ textAlign: "center" }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 800, fontFamily: F.mono,
+                    color: ind.hotRate >= 60 ? C.success : ind.hotRate >= 30 ? C.warn : C.danger,
+                  }}>{ind.hotRate}%</span>
+                </div>
+
+                {/* Avg Score */}
+                <div style={{ textAlign: "center" }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, fontFamily: F.mono,
+                    color: ind.avgScore >= 70 ? C.success : ind.avgScore >= 50 ? C.warn : C.inkMuted,
+                  }}>{ind.avgScore}</span>
+                </div>
+
+                {/* Conversion */}
+                <div style={{ textAlign: "center" }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, fontFamily: F.mono,
+                    color: ind.conversionRate > 0 ? C.info : C.inkMuted,
+                  }}>{ind.conversionRate}%</span>
+                </div>
+
+                {/* Pipeline Value */}
+                <div style={{ textAlign: "right", fontSize: 12, fontWeight: 700, fontFamily: F.mono, color: ind.totalPipelineValue > 0 ? C.accent : C.inkMuted }}>
+                  {ind.totalPipelineValue > 0 ? `\u00A3${ind.totalPipelineValue.toLocaleString()}` : "\u2014"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: "flex", gap: 16, marginTop: 10, justifyContent: "center" }}>
+          {[
+            { label: "Hot (70+)", color: "#2B7A4B" },
+            { label: "Warm (50\u201369)", color: "#B8922E" },
+            { label: "Cold (<50)", color: "#9B3535" },
+          ].map(l => (
+            <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 12, height: 12, borderRadius: 3, background: l.color }} />
+              <span style={{ fontSize: 11, color: C.inkSec }}>{l.label}</span>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: C.ink, width: 30, textAlign: "right", fontFamily: F.mono }}>{c}</span>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-      <div style={{ ...cardStyle({ padding: 20 }) }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>By Category</h3>
-        {byCat.map(([cat, n]) => <div key={cat} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.borderLight}` }}><span style={{ fontSize: 13, color: C.ink }}>{cat}</span><span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{n}</span></div>)}
-      </div>
-      <div style={{ ...cardStyle({ padding: 20 }) }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>By County / Region</h3>
-        {byCo.map(([co, n]) => <div key={co} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.borderLight}` }}><span style={{ fontSize: 13, color: C.ink }}>{co}</span><span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{n}</span></div>)}
-      </div>
-      <div style={{ ...cardStyle({ padding: 20 }) }}>
-        <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Pipeline Summary</h3>
-        {PIPELINE_COLUMNS.map(col => { const c = stats.byStage[col.id]||0; return (
-          <div key={col.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 3, background: col.color }} />
-            <span style={{ fontSize: 13, color: C.ink, flex: 1 }}>{col.label}</span>
-            <span style={{ fontSize: 14, fontWeight: 800, color: col.color }}>{c}</span>
-          </div>
-        ); })}
+
+      {/* ═══ ORIGINAL STATS PANELS ═══ */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ ...cardStyle({ padding: 20 }) }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Score Distribution</h3>
+          {scoreDist.map(([r, c]) => (
+            <div key={r} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 12, color: C.inkSec, width: 50, fontFamily: F.mono }}>{r}</span>
+              <div style={{ flex: 1, height: 20, background: C.bgWarm, borderRadius: 6, overflow: "hidden" }}>
+                <div style={{ height: "100%", borderRadius: 6, width: `${(c / leads.length) * 100}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.accentLight})` }} />
+              </div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: C.ink, width: 30, textAlign: "right", fontFamily: F.mono }}>{c}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ ...cardStyle({ padding: 20 }) }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>By County / Region</h3>
+          {byCo.slice(0, 15).map(([co, n]) => <div key={co} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${C.borderLight}` }}><span style={{ fontSize: 13, color: C.ink }}>{co}</span><span style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>{n}</span></div>)}
+          {byCo.length > 15 && <div style={{ fontSize: 11, color: C.inkMuted, marginTop: 8 }}>+ {byCo.length - 15} more counties</div>}
+        </div>
+        <div style={{ ...cardStyle({ padding: 20 }) }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Pipeline Summary</h3>
+          {PIPELINE_COLUMNS.map(col => { const c = stats.byStage[col.id]||0; return (
+            <div key={col.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 3, background: col.color }} />
+              <span style={{ fontSize: 13, color: C.ink, flex: 1 }}>{col.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: col.color }}>{c}</span>
+            </div>
+          ); })}
+        </div>
+        <div style={{ ...cardStyle({ padding: 20 }) }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, color: C.ink, margin: "0 0 16px", fontFamily: F.serif }}>Top Industries by Avg Score</h3>
+          {industryYield.filter(i => i.total >= 2).sort((a, b) => b.avgScore - a.avgScore).slice(0, 10).map(ind => (
+            <div key={ind.category} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.borderLight}` }}>
+              <span style={{ fontSize: 13, color: C.ink }}>{ind.category}</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: C.inkMuted }}>{ind.total} leads</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: ind.avgScore >= 70 ? C.success : ind.avgScore >= 50 ? C.warn : C.danger, fontFamily: F.mono }}>{ind.avgScore}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
