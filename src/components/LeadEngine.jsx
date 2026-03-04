@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { VENUE_DATABASE } from "../lib/venueData";
 import CSVImport from "./CSVImport";
 import CountyMap from "./CountyMap";
+import AgentPanel from "./AgentPanel";
 
 // ═══════════════════════════════════════════════════════════════
 // HH&T Lead Generation CRM — White Editorial Design
@@ -238,9 +239,9 @@ export default function LeadEngineCRM() {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", background: C.bgWarm, borderRadius: 8, padding: 3, border: `1px solid ${C.borderLight}` }}>
-            {["map", "kanban", "table", "stats"].map(v => (
+            {["map", "kanban", "table", "stats", "agents"].map(v => (
               <button key={v} onClick={() => { setView(v); if (v === "map") setFilterCounty("All"); }} style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F.sans, background: view === v ? C.card : "transparent", color: view === v ? C.ink : C.inkMuted, boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all .2s" }}>
-                {v === "map" ? "🗺 Map" : v.charAt(0).toUpperCase() + v.slice(1)}
+                {v === "map" ? "🗺 Map" : v === "agents" ? "🤖 Agents" : v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
@@ -279,6 +280,7 @@ export default function LeadEngineCRM() {
         {view === "kanban" && <KanbanView leads={filteredLeads} onDragStart={handleDragStart} onDrop={handleDrop} onDragOver={handleDragOver} onSelect={setSelectedLead} onPitch={setPitchModal} onMove={moveToStage} />}
         {view === "table" && <TableView leads={filteredLeads} onSelect={setSelectedLead} onMove={moveToStage} onPitch={setPitchModal} />}
         {view === "stats" && <StatsView leads={leads} stats={stats} />}
+        {view === "agents" && <AgentPanel leads={leads} onUpdateLead={updateLead} />}
       </div>
 
       {/* MODALS */}
