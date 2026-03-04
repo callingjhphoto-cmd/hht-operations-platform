@@ -1,6 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 import LeadEngineCRM from "./components/LeadEngine";
+import QuoteBuilder from "./components/QuoteBuilder";
+import EventManager from "./components/EventManager";
+import InvoiceManager from "./components/InvoiceManager";
+import StaffManager from "./components/StaffManager";
+import InventoryManager from "./components/InventoryManager";
+import ClientPortal from "./components/ClientPortal";
+import DocumentManager from "./components/DocumentManager";
 import { initializeStore } from "./lib/store";
 import { RAW_LEADS } from "./lib/seedData";
 
@@ -790,41 +797,73 @@ const AIAssistant = () => {
 // APP SHELL
 // ══════════════════════════════════════════════════════════════════════════════
 
-const NAV = [
-  { id: "command", label: "Command Centre", icon: "◎" },
-  { id: "leads", label: "Lead Engine", icon: "◉" },
-  { id: "pipeline", label: "Event Pipeline", icon: "▤" },
-  { id: "time", label: "Time & Utilisation", icon: "◔" },
-  { id: "finance", label: "Financial Hub", icon: "◈" },
-  { id: "ai", label: "AI Assistant", icon: "◇" },
+const NAV_SECTIONS = [
+  { label: "Overview", items: [
+    { id: "command", label: "Command Centre", icon: "◎" },
+    { id: "ai", label: "AI Assistant", icon: "◇" },
+  ]},
+  { label: "Sales & Leads", items: [
+    { id: "leads", label: "Lead Engine", icon: "◉" },
+    { id: "clients", label: "Client Portal", icon: "◑" },
+    { id: "quotes", label: "Quotes & Proposals", icon: "◫" },
+  ]},
+  { label: "Operations", items: [
+    { id: "events", label: "Event Manager", icon: "▤" },
+    { id: "pipeline", label: "Event Pipeline", icon: "▥" },
+    { id: "staff", label: "Staff & Scheduling", icon: "◔" },
+    { id: "inventory", label: "Inventory & Stock", icon: "▦" },
+  ]},
+  { label: "Finance", items: [
+    { id: "invoices", label: "Invoicing", icon: "◈" },
+    { id: "finance", label: "Financial Hub", icon: "◇" },
+    { id: "time", label: "Time & Utilisation", icon: "◐" },
+  ]},
+  { label: "Admin", items: [
+    { id: "documents", label: "Documents", icon: "▧" },
+  ]},
 ];
 
 export default function App() {
   const [page, setPage] = useState("command");
+  const [collapsedSections, setCollapsedSections] = useState({});
   const [now, setNow] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
-  // Initialize CRM data store with seed data on first load
   useEffect(() => { initializeStore(RAW_LEADS); }, []);
 
-  const pages = { command: CommandCentre, leads: LeadEngine, pipeline: EventPipeline, time: TimeUtilisation, finance: FinancialHub, ai: AIAssistant };
+  const toggleSection = (label) => setCollapsedSections(prev => ({ ...prev, [label]: !prev[label] }));
+
+  const pages = {
+    command: CommandCentre, leads: LeadEngine, pipeline: EventPipeline, time: TimeUtilisation,
+    finance: FinancialHub, ai: AIAssistant, quotes: QuoteBuilder, events: EventManager,
+    invoices: InvoiceManager, staff: StaffManager, inventory: InventoryManager,
+    clients: ClientPortal, documents: DocumentManager,
+  };
   const Page = pages[page] || CommandCentre;
 
   return (
     <div style={{ display: "flex", height: "100vh", background: C.bg, fontFamily: F.sans, color: C.ink }}>
       {/* Sidebar */}
-      <nav style={{ width: 200, background: C.card, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+      <nav style={{ width: 220, background: C.card, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
         <div style={{ padding: "20px 16px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", alignItems: "center", gap: 10 }}>
           <HHTLogo s={28} />
           <div>
             <div style={{ fontFamily: F.serif, fontWeight: 700, fontSize: 13, letterSpacing: 0.5 }}>HH&T</div>
-            <div style={{ fontSize: 10, color: C.inkMuted, letterSpacing: 0.3 }}>Operations</div>
+            <div style={{ fontSize: 10, color: C.inkMuted, letterSpacing: 0.3 }}>Operations Platform</div>
           </div>
         </div>
-        <div style={{ padding: "12px 8px", flex: 1 }}>
-          {NAV.map(n => (
-            <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", marginBottom: 2, borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontFamily: F.sans, fontWeight: page === n.id ? 600 : 400, background: page === n.id ? C.accentSubtle : "transparent", color: page === n.id ? C.accent : C.inkSec, transition: "all 0.15s" }}>
-              <span style={{ fontSize: 14, opacity: 0.7 }}>{n.icon}</span>{n.label}
-            </button>
+        <div style={{ padding: "8px 8px", flex: 1, overflowY: "auto" }}>
+          {NAV_SECTIONS.map(section => (
+            <div key={section.label} style={{ marginBottom: 4 }}>
+              <button onClick={() => toggleSection(section.label)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, fontFamily: F.sans }}>
+                {section.label}
+                <span style={{ fontSize: 8, transition: "transform 0.2s", transform: collapsedSections[section.label] ? "rotate(-90deg)" : "rotate(0deg)" }}>▼</span>
+              </button>
+              {!collapsedSections[section.label] && section.items.map(n => (
+                <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 10px 7px 16px", marginBottom: 1, borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, fontWeight: page === n.id ? 600 : 400, background: page === n.id ? C.accentSubtle : "transparent", color: page === n.id ? C.accent : C.inkSec, transition: "all 0.15s" }}>
+                  <span style={{ fontSize: 12, opacity: 0.7, width: 16, textAlign: "center" }}>{n.icon}</span>{n.label}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
         <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.borderLight}` }}>
@@ -844,7 +883,7 @@ export default function App() {
           <div style={{ fontSize: 12, color: C.inkMuted }}>{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · {now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={pillStyle(C.successBg, C.success)}>● 3 APIs Connected</span>
-            <span style={{ fontSize: 11, color: C.inkMuted, fontFamily: F.mono }}>Ghost Operator v4.0</span>
+            <span style={{ fontSize: 11, color: C.inkMuted, fontFamily: F.mono }}>Ghost Operator v5.0</span>
           </div>
         </header>
         <div style={{ flex: 1, overflow: "auto" }}>
