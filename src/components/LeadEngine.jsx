@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { VENUE_DATABASE } from "../lib/venueData";
 import { WEDDING_PLANNER_LEADS } from "../lib/weddingPlannerLeads";
+import { SPORT_CHARITY_ENTERTAINMENT_LEADS } from "../lib/sportCharityEntertainmentLeads";
+import { PARTNERSHIP_LEADS } from "../lib/partnershipLeads";
+import { UNIVERSITY_VENUE_LEADS, HOTEL_GROUP_LEADS, PR_AGENCY_LEADS } from "../lib/newBusinessLeads";
+import { CORPORATE_EXPERIENTIAL_LEADS } from "../lib/corporateExperientialLeads";
+import { NEW_VENUE_LEADS } from "../lib/newVenueLeads";
 import CSVImport from "./CSVImport";
 import CountyMap from "./CountyMap";
 import AgentPanel from "./AgentPanel";
@@ -47,6 +52,9 @@ function scoreVenue(v) {
   const cat = (v.category || "").toLowerCase();
   if (cat.includes("wedding") || cat.includes("barn") || cat.includes("estate")) s += 15;
   else if (cat.includes("castle") || cat.includes("historic")) s += 12;
+  else if (cat.includes("racecourse") || cat.includes("polo") || cat.includes("cricket")) s += 14;
+  else if (cat.includes("charity") || cat.includes("rugby")) s += 13;
+  else if (cat.includes("entertainment") || cat.includes("team building")) s += 11;
   else if (cat.includes("event") || cat.includes("museum")) s += 8;
   else s += 5;
   if (v.trigger_event && v.trigger_event.length > 50) s += 10;
@@ -77,6 +85,13 @@ function generatePitch(venue) {
   else if (cat.includes("estate") || cat.includes("country")) venueStyle = "your magnificent estate grounds";
   else if (cat.includes("historic") || cat.includes("livery")) venueStyle = "your incredible historic space";
   else if (cat.includes("museum") || cat.includes("gallery")) venueStyle = "your inspiring gallery setting";
+  else if (cat.includes("racecourse")) venueStyle = "your prestigious racecourse hospitality";
+  else if (cat.includes("cricket")) venueStyle = "your world-class cricket ground hospitality";
+  else if (cat.includes("polo")) venueStyle = "your exclusive polo club setting";
+  else if (cat.includes("rugby")) venueStyle = "your electric matchday hospitality";
+  else if (cat.includes("charity")) venueStyle = "your prestigious fundraising events";
+  else if (cat.includes("entertainment")) venueStyle = "your entertainment booking expertise";
+  else if (cat.includes("team building")) venueStyle = "your corporate team building experiences";
   else if (cat.includes("event")) venueStyle = "your versatile event space";
   const dist = venue.distance_from_london_miles;
   const logistics = dist <= 20
@@ -171,7 +186,25 @@ export default function LeadEngineCRM() {
       assigned_to: "", est_value: 0, notes: "", activities: [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }));
-    const enriched = [...venues, ...planners];
+    const sportCharityEnt = SPORT_CHARITY_ENTERTAINMENT_LEADS.map((v, i) => ({
+      ...v, id: `sce_${i}`, score: scoreVenue(v), stage: "scraped",
+      assigned_to: "", est_value: 0, notes: "", activities: [],
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }));
+    const mapLeadSet = (arr, prefix) => arr.map((v, i) => ({
+      ...v, id: `${prefix}_${i}`, score: scoreVenue(v), stage: "scraped",
+      assigned_to: "", est_value: 0, notes: "", activities: [],
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }));
+    const enriched = [
+      ...venues, ...planners, ...sportCharityEnt,
+      ...mapLeadSet(PARTNERSHIP_LEADS, "partner"),
+      ...mapLeadSet(UNIVERSITY_VENUE_LEADS, "uni"),
+      ...mapLeadSet(HOTEL_GROUP_LEADS, "hotel"),
+      ...mapLeadSet(PR_AGENCY_LEADS, "pr"),
+      ...mapLeadSet(CORPORATE_EXPERIENTIAL_LEADS, "corp"),
+      ...mapLeadSet(NEW_VENUE_LEADS, "newvenue"),
+    ];
     setLeads(enriched);
     localStorage.setItem("hht_pipeline_v3", JSON.stringify(enriched));
   }
