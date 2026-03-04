@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { VENUE_DATABASE } from "../lib/venueData";
+import { WEDDING_PLANNER_LEADS } from "../lib/weddingPlannerLeads";
 import CSVImport from "./CSVImport";
 import CountyMap from "./CountyMap";
 import AgentPanel from "./AgentPanel";
@@ -160,11 +161,17 @@ export default function LeadEngineCRM() {
   }, []);
 
   function initFromDB() {
-    const enriched = VENUE_DATABASE.map((v, i) => ({
+    const venues = VENUE_DATABASE.map((v, i) => ({
       ...v, id: `venue_${i}`, score: scoreVenue(v), stage: i < 60 ? "scraped" : "enriched",
       assigned_to: "", est_value: 0, notes: "", activities: [],
       created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }));
+    const planners = WEDDING_PLANNER_LEADS.map((v, i) => ({
+      ...v, id: `planner_${i}`, score: scoreVenue(v), stage: "scraped",
+      assigned_to: "", est_value: 0, notes: "", activities: [],
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }));
+    const enriched = [...venues, ...planners];
     setLeads(enriched);
     localStorage.setItem("hht_pipeline_v3", JSON.stringify(enriched));
   }
