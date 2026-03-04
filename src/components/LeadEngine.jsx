@@ -15,6 +15,7 @@ import CSVImport from "./CSVImport";
 import CountyMap from "./CountyMap";
 import AgentPanel from "./AgentPanel";
 import ScraperPanel from "./ScraperPanel";
+import CompetitorMatrix from "./CompetitorMatrix";
 
 // ═══════════════════════════════════════════════════════════════
 // HH&T Lead Generation CRM — White Editorial Design
@@ -339,7 +340,7 @@ export default function LeadEngineCRM() {
         {view === "map" && <CountyMap leads={leads} onCountyClick={handleCountyClick} />}
         {view === "kanban" && <KanbanView leads={filteredLeads} onDragStart={handleDragStart} onDrop={handleDrop} onDragOver={handleDragOver} onSelect={setSelectedLead} onPitch={setPitchModal} onMove={moveToStage} />}
         {view === "table" && <TableView leads={filteredLeads} onSelect={setSelectedLead} onMove={moveToStage} onPitch={setPitchModal} />}
-        {view === "stats" && <StatsView leads={leads} stats={stats} />}
+        {view === "stats" && <StatsView leads={leads} stats={stats} CompetitorMatrix={CompetitorMatrix} />}
         {view === "agents" && <AgentPanel leads={leads} onUpdateLead={updateLead} />}
         {view === "scraper" && <ScraperPanel leads={leads} onAddLeads={(newLeads) => {
           setLeads(prev => {
@@ -457,7 +458,8 @@ function TableView({ leads, onSelect, onMove, onPitch }) {
 }
 
 // ═══ STATS + INDUSTRY YIELD TRACKER ═══
-function StatsView({ leads, stats }) {
+function StatsView({ leads, stats, CompetitorMatrix }) {
+  const [statsTab, setStatsTab] = useState("analytics"); // analytics | competitors
   const [yieldSort, setYieldSort] = useState("hotRate");
   const byCat = useMemo(() => { const m = {}; leads.forEach(l => { m[l.category] = (m[l.category] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [leads]);
   const byCo = useMemo(() => { const m = {}; leads.forEach(l => { m[l.county || "Unknown"] = (m[l.county || "Unknown"] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [leads]);
@@ -515,7 +517,27 @@ function StatsView({ leads, stats }) {
 
   return (
     <div>
+      {/* Analytics / Competitors Toggle */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: C.bgWarm, padding: 3, borderRadius: 8 }}>
+        {[
+          { id: "analytics", label: "Analytics & Yield Tracker" },
+          { id: "competitors", label: "Competitive Intelligence" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setStatsTab(t.id)} style={{
+            flex: 1, padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer",
+            fontSize: 13, fontWeight: 600, fontFamily: F.sans,
+            background: statsTab === t.id ? C.card : "transparent",
+            color: statsTab === t.id ? C.ink : C.inkMuted,
+            boxShadow: statsTab === t.id ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Competitor Matrix */}
+      {statsTab === "competitors" && CompetitorMatrix && <CompetitorMatrix />}
+
       {/* ═══ INDUSTRY YIELD TRACKER ═══ */}
+      {statsTab === "analytics" && <div>
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
@@ -705,6 +727,7 @@ function StatsView({ leads, stats }) {
           ))}
         </div>
       </div>
+    </div>}
     </div>
   );
 }
