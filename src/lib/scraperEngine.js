@@ -1,0 +1,849 @@
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Scraper Engine — Multi-source lead discovery using real APIs & techniques
+// Adapts patterns from Crawlee, Firecrawl, ScrapeGraphAI, Jina AI Reader
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ── Rate Limiter ──
+// Pattern from Crawlee: token bucket with configurable rate
+class RateLimiter {
+  constructor(requestsPerMinute = 20) {
+    this.interval = (60 * 1000) / requestsPerMinute;
+    this.lastRequest = 0;
+    this.queue = [];
+    this.processing = false;
+  }
+
+  async throttle() {
+    const now = Date.now();
+    const elapsed = now - this.lastRequest;
+    if (elapsed < this.interval) {
+      await new Promise(r => setTimeout(r, this.interval - elapsed));
+    }
+    this.lastRequest = Date.now();
+  }
+}
+
+// ── Retry with exponential backoff ──
+// Pattern from Crawlee/Firecrawl: retry failed requests with backoff
+async function retryFetch(url, options = {}, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok && response.status >= 500 && attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+    }
+  }
+}
+
+// ── Result normalizer ──
+// Pattern from ScrapeGraphAI: normalize all sources to a common schema
+function normalizeToLead(raw, source) {
+  return {
+    venue_name: raw.name || raw.title || raw.displayName?.text || '',
+    location: raw.address || raw.formattedAddress || raw.location || '',
+    city: raw.city || extractCity(raw.address || raw.formattedAddress || '') || '',
+    county: raw.county || '',
+    category: raw.category || raw.type || source.defaultCategory || 'Unknown',
+    capacity: raw.capacity || 0,
+    distance_from_london_miles: raw.distance || 0,
+    website: cleanUrl(raw.website || raw.websiteUri || raw.url || raw.link || ''),
+    trigger_event: raw.description || raw.snippet || raw.notes || '',
+    contact_email: raw.email || '',
+    phone: raw.phone || raw.nationalPhoneNumber || '',
+    rating: raw.rating || null,
+    reviewCount: raw.userRatingCount || raw.reviews || 0,
+    source: source.id,
+    scraped_at: new Date().toISOString(),
+  };
+}
+
+function cleanUrl(url) {
+  if (!url) return '';
+  return url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+}
+
+function extractCity(address) {
+  if (!address) return '';
+  const parts = address.split(',').map(p => p.trim());
+  return parts.length >= 2 ? parts[parts.length - 2] : parts[0] || '';
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SOURCE ADAPTERS — Each adapter knows how to query one data source
+// Pattern from Crawlee: pluggable request handlers per source type
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── 1. Jina AI Reader (FREE, no API key needed) ──
+// Technique: Converts any URL to clean markdown via headless browser rendering
+// Used by: ScrapeGraphAI, LangChain, many AI agent frameworks
+// How it works: Jina runs a headless browser, renders the page, strips nav/ads,
+// returns clean markdown. AI can then extract structured data from the markdown.
+const jinaAdapter = {
+  id: 'jina-reader',
+  name: 'Jina AI Reader',
+  description: 'Converts any URL to clean markdown. Free at 20 req/min. Uses headless browser rendering like Firecrawl.',
+  freeLimit: '20 requests/minute (no API key), 200/min with free key',
+  technique: 'Headless browser → HTML → Readability algorithm → Markdown',
+  rateLimit: new RateLimiter(18),
+
+  // Scrape a single URL and extract business info
+  async scrapeUrl(url) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(`https://r.jina.ai/${url}`, {
+      headers: { 'Accept': 'application/json' },
+    });
+    return await response.json();
+  },
+
+  // Search the web (Jina's search endpoint)
+  async search(query) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://s.jina.ai/${encodeURIComponent(query)}`,
+      { headers: { 'Accept': 'application/json' } },
+    );
+    return await response.json();
+  },
+
+  // Extract contact details from markdown content using regex patterns
+  extractContacts(markdown) {
+    const emails = [...new Set((markdown.match(/[\w.+-]+@[\w-]+\.[\w.]+/g) || [])
+      .filter(e => !e.includes('example.') && !e.includes('sentry.')))];
+    const phones = [...new Set((markdown.match(/(?:0\d{2,4}[\s-]?\d{3,4}[\s-]?\d{3,4}|(?:\+44|0044)[\s-]?\d{2,4}[\s-]?\d{3,4}[\s-]?\d{3,4})/g) || []))];
+    const websites = [...new Set((markdown.match(/(?:https?:\/\/)?(?:www\.)?[\w-]+\.(?:co\.uk|com|org\.uk|org|uk|net)/g) || []))];
+    return { emails, phones, websites };
+  },
+};
+
+// ── 2. Companies House API (FREE, unlimited, UK government) ──
+// Technique: Official REST API querying the UK company register
+// How it works: Search by SIC code + location to find all registered event companies
+const companiesHouseAdapter = {
+  id: 'companies-house',
+  name: 'Companies House',
+  description: 'Free UK government API. Search event companies by SIC code & location. 600 req/5min.',
+  freeLimit: '600 requests per 5 minutes (completely free)',
+  technique: 'REST API → UK company register → SIC code filtering',
+  rateLimit: new RateLimiter(100),
+
+  // SIC codes for the events industry
+  sicCodes: {
+    '82301': 'Exhibition organisers',
+    '82302': 'Conference organisers',
+    '56210': 'Event catering',
+    '96090': 'Wedding planners / event managers (catch-all)',
+    '70229': 'Event management consultancy',
+    '55100': 'Hotels (venue businesses)',
+    '82990': 'Event support services',
+  },
+
+  async search(sicCode, location, apiKey) {
+    if (!apiKey) return [];
+    await this.rateLimit.throttle();
+
+    const params = new URLSearchParams({
+      sic_codes: sicCode,
+      location,
+      company_status: 'active',
+      size: '100',
+      start_index: '0',
+    });
+
+    const response = await retryFetch(
+      `https://api.company-information.service.gov.uk/advanced-search/companies?${params}`,
+      { headers: { 'Authorization': `Basic ${btoa(apiKey + ':')}` } },
+    );
+    const data = await response.json();
+
+    return (data.items || []).map(company => ({
+      name: company.company_name,
+      number: company.company_number,
+      address: [
+        company.registered_office_address?.address_line_1,
+        company.registered_office_address?.locality,
+        company.registered_office_address?.region,
+        company.registered_office_address?.postal_code,
+      ].filter(Boolean).join(', '),
+      city: company.registered_office_address?.locality || '',
+      county: company.registered_office_address?.region || location,
+      category: this.sicCodes[sicCode] || 'Event Company',
+      type: company.company_type,
+      dateCreated: company.date_of_creation,
+    }));
+  },
+
+  async getCompanyDetails(companyNumber, apiKey) {
+    if (!apiKey) return null;
+    await this.rateLimit.throttle();
+
+    const response = await retryFetch(
+      `https://api.company-information.service.gov.uk/company/${companyNumber}`,
+      { headers: { 'Authorization': `Basic ${btoa(apiKey + ':')}` } },
+    );
+    return await response.json();
+  },
+};
+
+// ── 3. Google Places API (10,000 free/month) ──
+// Technique: Text Search or Nearby Search using Google's Places database
+// How it works: Send a text query + location bias, get back business listings
+// with name, address, phone, website, rating
+const googlePlacesAdapter = {
+  id: 'google-places',
+  name: 'Google Places',
+  description: 'Search for businesses by type + location. 10,000 free calls/month.',
+  freeLimit: '10,000 API calls/month (Essentials tier)',
+  technique: 'REST API → Google Maps database → Text Search / Nearby Search',
+  rateLimit: new RateLimiter(50),
+
+  // County center coordinates for 150mi radius searches
+  countyCoords: {
+    'Surrey': { lat: 51.2488, lng: -0.4072 },
+    'Kent': { lat: 51.2787, lng: 0.7757 },
+    'East Sussex': { lat: 50.9522, lng: 0.2623 },
+    'West Sussex': { lat: 50.9361, lng: -0.4614 },
+    'Hampshire': { lat: 51.0617, lng: -1.3091 },
+    'Berkshire': { lat: 51.4540, lng: -1.0782 },
+    'Oxfordshire': { lat: 51.7520, lng: -1.2577 },
+    'Buckinghamshire': { lat: 51.7762, lng: -0.8087 },
+    'Hertfordshire': { lat: 51.8099, lng: -0.2378 },
+    'Essex': { lat: 51.7343, lng: 0.4691 },
+    'Suffolk': { lat: 52.1872, lng: 1.0052 },
+    'Norfolk': { lat: 52.6140, lng: 1.0270 },
+    'Cambridgeshire': { lat: 52.2053, lng: 0.1218 },
+    'Dorset': { lat: 50.7488, lng: -2.3445 },
+    'Wiltshire': { lat: 51.3492, lng: -1.9927 },
+    'Somerset': { lat: 51.1051, lng: -2.9262 },
+    'Devon': { lat: 50.7156, lng: -3.5309 },
+    'Cornwall': { lat: 50.2660, lng: -5.0527 },
+    'Gloucestershire': { lat: 51.8642, lng: -2.2382 },
+    'Warwickshire': { lat: 52.2819, lng: -1.5849 },
+    'Northamptonshire': { lat: 52.2340, lng: -0.8975 },
+    'Bedfordshire': { lat: 52.0035, lng: -0.4510 },
+    'Leicestershire': { lat: 52.6369, lng: -1.1398 },
+    'Worcestershire': { lat: 52.1920, lng: -2.2216 },
+    'Nottinghamshire': { lat: 53.1000, lng: -1.0308 },
+    'Lincolnshire': { lat: 53.0667, lng: -0.3833 },
+    'Staffordshire': { lat: 52.8794, lng: -2.0516 },
+    'Shropshire': { lat: 52.6760, lng: -2.7652 },
+  },
+
+  async textSearch(query, county, apiKey) {
+    if (!apiKey) return [];
+    await this.rateLimit.throttle();
+
+    const coords = this.countyCoords[county] || { lat: 51.5074, lng: -0.1278 };
+
+    const response = await retryFetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.rating,places.userRatingCount,places.primaryType',
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        locationBias: {
+          circle: { center: { latitude: coords.lat, longitude: coords.lng }, radius: 50000.0 },
+        },
+        maxResultCount: 20,
+      }),
+    });
+
+    const data = await response.json();
+    return (data.places || []).map(p => ({
+      name: p.displayName?.text || '',
+      address: p.formattedAddress || '',
+      phone: p.nationalPhoneNumber || '',
+      website: p.websiteUri || '',
+      rating: p.rating,
+      reviews: p.userRatingCount,
+      type: p.primaryType || '',
+      county,
+    }));
+  },
+};
+
+// ── 4. Serper.dev (2,500 free queries) ──
+// Technique: Google Search Results API with structured local/organic results
+// How it works: Submit search query, get back Google SERP data including
+// local business listings with phone, website, address, rating
+const serperAdapter = {
+  id: 'serper',
+  name: 'Serper.dev',
+  description: 'Google Search API. Returns organic + local results. 2,500 free queries.',
+  freeLimit: '2,500 one-time queries (no expiry for 6 months)',
+  technique: 'REST API → Google SERP scraping → Structured JSON',
+  rateLimit: new RateLimiter(30),
+
+  // Web search
+  async search(query, apiKey) {
+    if (!apiKey) return { organic: [], local: [] };
+    await this.rateLimit.throttle();
+
+    const response = await retryFetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ q: query, gl: 'gb', hl: 'en', num: 20 }),
+    });
+
+    const data = await response.json();
+    return {
+      organic: (data.organic || []).map(r => ({
+        name: r.title, link: r.link, description: r.snippet,
+      })),
+      local: (data.places || []).map(p => ({
+        name: p.title, address: p.address, phone: p.phone,
+        website: p.website, rating: p.rating, reviews: p.reviews,
+      })),
+      knowledgeGraph: data.knowledgeGraph || null,
+    };
+  },
+
+  // Google Maps / Places search
+  async searchPlaces(query, apiKey) {
+    if (!apiKey) return [];
+    await this.rateLimit.throttle();
+
+    const response = await retryFetch('https://google.serper.dev/places', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ q: query, gl: 'gb' }),
+    });
+
+    const data = await response.json();
+    return (data.places || []).map(p => ({
+      name: p.title, address: p.address, phone: p.phone,
+      website: p.website, rating: p.rating, reviews: p.reviews,
+    }));
+  },
+};
+
+// ── 5. Instagram Discovery ──
+// Technique: Public profile scraping via Jina Reader + hashtag search via Serper
+// How it works: Instagram business profiles are public — we use Google to find
+// them, then Jina Reader to extract the bio, website, and contact info
+const instagramAdapter = {
+  id: 'instagram',
+  name: 'Instagram Discovery',
+  description: 'Find event businesses via Instagram hashtags and profiles. Uses Google search + Jina Reader.',
+  freeLimit: 'No direct Instagram API needed — uses Google + Jina',
+  technique: 'Google site:instagram.com search → Jina Reader for profile extraction',
+  rateLimit: new RateLimiter(10),
+
+  // Search hashtags for event businesses
+  eventHashtags: [
+    'weddingplanner{county}', 'eventplanner{county}', '{county}wedding',
+    '{county}events', 'cocktailbar{county}', 'mobilebar{county}',
+    '{county}venue', '{county}weddingvenue', 'corporateevents{county}',
+    'eventcatering{county}', '{county}eventplanner', 'luxurywedding{county}',
+    'barnwedding{county}', '{county}cocktails', 'privateevent{county}',
+    'weddingstylist{county}', 'eventdesign{county}', 'partyplanner{county}',
+    'festivalbar{county}', 'popupbar{county}',
+  ],
+
+  // Find Instagram accounts via Google search
+  async findProfiles(searchTerm, county, serperApiKey) {
+    if (!serperApiKey) return [];
+    await this.rateLimit.throttle();
+
+    const query = `site:instagram.com "${searchTerm}" "${county}" -p/ -reel`;
+    const response = await retryFetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': serperApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ q: query, gl: 'gb', num: 10 }),
+    });
+
+    const data = await response.json();
+    return (data.organic || [])
+      .filter(r => r.link?.includes('instagram.com/'))
+      .map(r => ({
+        username: r.link.match(/instagram\.com\/([^/?]+)/)?.[1] || '',
+        profileUrl: r.link,
+        title: r.title,
+        bio: r.snippet,
+        county,
+      }))
+      .filter(p => p.username && !['p', 'reel', 'explore', 'stories', 'accounts'].includes(p.username));
+  },
+
+  // Extract business info from an Instagram profile page using Jina Reader
+  async scrapeProfile(profileUrl) {
+    try {
+      const data = await jinaAdapter.scrapeUrl(profileUrl);
+      if (!data?.content) return null;
+
+      const content = data.content;
+      const contacts = jinaAdapter.extractContacts(content);
+
+      // Extract follower count if visible
+      const followers = content.match(/([\d,.]+[KMkm]?)\s*(?:Followers|followers)/)?.[1] || '';
+
+      // Extract website from bio
+      const bioWebsite = content.match(/(?:Website|Link|Bio)\s*[:\-]?\s*(https?:\/\/[\w.-]+\.\w+[^\s]*)/i)?.[1] || '';
+
+      return {
+        followers,
+        website: contacts.websites[0] || bioWebsite || '',
+        email: contacts.emails[0] || '',
+        phone: contacts.phones[0] || '',
+        bio: data.description || '',
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  // Generate search queries for a county
+  getHashtagQueries(county) {
+    const cleanCounty = county.toLowerCase().replace(/\s+/g, '');
+    return this.eventHashtags.map(h => h.replace(/\{county\}/g, cleanCounty));
+  },
+};
+
+// ── 6. Hunter.io (25 free/month — email enrichment) ──
+// Technique: Domain email search using public sources
+const hunterAdapter = {
+  id: 'hunter',
+  name: 'Hunter.io',
+  description: 'Find email addresses for any domain. 25 free searches/month.',
+  freeLimit: '25 searches + 50 verifications per month',
+  technique: 'Domain crawling → Email pattern detection → Public source aggregation',
+  rateLimit: new RateLimiter(10),
+
+  async findEmails(domain, apiKey) {
+    if (!apiKey || !domain) return null;
+    await this.rateLimit.throttle();
+
+    const response = await retryFetch(
+      `https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${apiKey}`,
+    );
+    const data = await response.json();
+
+    return {
+      domain: data.data?.domain,
+      organization: data.data?.organization,
+      emailPattern: data.data?.pattern,
+      emails: (data.data?.emails || []).map(e => ({
+        email: e.value,
+        type: e.type,
+        confidence: e.confidence,
+        name: [e.first_name, e.last_name].filter(Boolean).join(' '),
+        position: e.position,
+        department: e.department,
+      })),
+    };
+  },
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCRAPER ENGINE — Orchestrates all adapters with scheduling & dedup
+// Pattern from Crawlee: RequestQueue + AutoscaledPool
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SCRAPER_STATE_KEY = 'hht_scraper_state';
+const SCRAPED_LEADS_KEY = 'hht_scraped_leads';
+
+class ScraperEngine {
+  constructor() {
+    this.adapters = {
+      'jina-reader': jinaAdapter,
+      'companies-house': companiesHouseAdapter,
+      'google-places': googlePlacesAdapter,
+      'serper': serperAdapter,
+      'instagram': instagramAdapter,
+      'hunter': hunterAdapter,
+    };
+
+    this.state = this.loadState();
+    this.isRunning = false;
+    this.onProgress = null;
+    this.onLeadFound = null;
+    this.abortController = null;
+  }
+
+  loadState() {
+    try {
+      const saved = localStorage.getItem(SCRAPER_STATE_KEY);
+      return saved ? JSON.parse(saved) : this.defaultState();
+    } catch {
+      return this.defaultState();
+    }
+  }
+
+  defaultState() {
+    return {
+      lastRun: null,
+      totalLeadsFound: 0,
+      totalSearches: 0,
+      completedCounties: [],
+      completedSources: {},
+      schedule: { intervalHours: 4, nextRun: null, enabled: false },
+      apiKeys: {},
+    };
+  }
+
+  saveState() {
+    localStorage.setItem(SCRAPER_STATE_KEY, JSON.stringify(this.state));
+  }
+
+  // ── Get all scraped leads from storage ──
+  getScrapedLeads() {
+    try {
+      return JSON.parse(localStorage.getItem(SCRAPED_LEADS_KEY)) || [];
+    } catch {
+      return [];
+    }
+  }
+
+  saveScrapedLead(lead) {
+    const leads = this.getScrapedLeads();
+    // Dedup check
+    const isDupe = leads.some(existing => {
+      const existName = (existing.venue_name || '').toLowerCase();
+      const newName = (lead.venue_name || '').toLowerCase();
+      const existWeb = cleanUrl(existing.website || '');
+      const newWeb = cleanUrl(lead.website || '');
+      return (newName && existName === newName) || (newWeb && existWeb === newWeb);
+    });
+
+    if (!isDupe) {
+      leads.push(lead);
+      localStorage.setItem(SCRAPED_LEADS_KEY, JSON.stringify(leads));
+      this.state.totalLeadsFound++;
+      this.saveState();
+      return true;
+    }
+    return false;
+  }
+
+  // ── Configure API keys ──
+  setApiKeys(keys) {
+    this.state.apiKeys = { ...this.state.apiKeys, ...keys };
+    this.saveState();
+  }
+
+  // ── Schedule periodic scraping ──
+  setSchedule(intervalHours, enabled) {
+    this.state.schedule = {
+      intervalHours,
+      enabled,
+      nextRun: enabled ? new Date(Date.now() + intervalHours * 60 * 60 * 1000).toISOString() : null,
+    };
+    this.saveState();
+
+    if (enabled) {
+      this.startScheduler();
+    }
+  }
+
+  startScheduler() {
+    if (this._schedulerInterval) clearInterval(this._schedulerInterval);
+
+    this._schedulerInterval = setInterval(() => {
+      if (!this.state.schedule.enabled || this.isRunning) return;
+
+      const nextRun = this.state.schedule.nextRun;
+      if (nextRun && new Date(nextRun) <= new Date()) {
+        this.runFullScan();
+      }
+    }, 60000); // Check every minute
+  }
+
+  stopScheduler() {
+    if (this._schedulerInterval) {
+      clearInterval(this._schedulerInterval);
+      this._schedulerInterval = null;
+    }
+    this.state.schedule.enabled = false;
+    this.saveState();
+  }
+
+  // ── Abort running scan ──
+  abort() {
+    this.abortController?.abort();
+    this.isRunning = false;
+  }
+
+  // ── Run a full multi-source scan ──
+  async runFullScan(options = {}) {
+    if (this.isRunning) return { error: 'Already running' };
+
+    this.isRunning = true;
+    this.abortController = new AbortController();
+    const results = { found: 0, searched: 0, errors: [], bySource: {} };
+
+    const {
+      counties = null,
+      sources = null,
+      searchTypes = ['event venue', 'wedding planner', 'corporate event', 'event catering', 'marquee hire'],
+    } = options;
+
+    const targetCounties = counties || Object.keys(googlePlacesAdapter.countyCoords);
+    const targetSources = sources || this.getAvailableSources();
+
+    const totalSteps = targetCounties.length * searchTypes.length * targetSources.length;
+    let currentStep = 0;
+
+    try {
+      for (const county of targetCounties) {
+        if (this.abortController.signal.aborted) break;
+
+        for (const searchType of searchTypes) {
+          if (this.abortController.signal.aborted) break;
+
+          for (const sourceId of targetSources) {
+            if (this.abortController.signal.aborted) break;
+            currentStep++;
+            const pct = Math.round((currentStep / totalSteps) * 100);
+
+            this.onProgress?.({
+              message: `[${pct}%] ${sourceId}: "${searchType}" in ${county}`,
+              progress: pct,
+              county,
+              source: sourceId,
+              found: results.found,
+            });
+
+            try {
+              const leads = await this.searchSource(sourceId, searchType, county);
+              results.searched++;
+              results.bySource[sourceId] = (results.bySource[sourceId] || 0) + leads.length;
+
+              for (const raw of leads) {
+                const lead = normalizeToLead(raw, { id: sourceId, defaultCategory: searchType });
+                lead.county = lead.county || county;
+                if (this.saveScrapedLead(lead)) {
+                  results.found++;
+                  this.onLeadFound?.(lead);
+                }
+              }
+            } catch (err) {
+              results.errors.push({ source: sourceId, county, searchType, error: err.message });
+            }
+          }
+        }
+      }
+    } finally {
+      this.isRunning = false;
+      this.state.lastRun = new Date().toISOString();
+      if (this.state.schedule.enabled) {
+        this.state.schedule.nextRun = new Date(
+          Date.now() + this.state.schedule.intervalHours * 60 * 60 * 1000,
+        ).toISOString();
+      }
+      this.saveState();
+    }
+
+    return results;
+  }
+
+  // ── Search a single source ──
+  async searchSource(sourceId, searchType, county) {
+    const keys = this.state.apiKeys;
+
+    switch (sourceId) {
+      case 'google-places':
+        return googlePlacesAdapter.textSearch(`${searchType} ${county}`, county, keys.googlePlaces);
+
+      case 'serper':
+        const serperResults = await serperAdapter.searchPlaces(`${searchType} ${county} UK`, keys.serper);
+        return serperResults;
+
+      case 'companies-house': {
+        const allResults = [];
+        for (const sicCode of Object.keys(companiesHouseAdapter.sicCodes)) {
+          const companies = await companiesHouseAdapter.search(sicCode, county, keys.companiesHouse);
+          allResults.push(...companies);
+        }
+        return allResults;
+      }
+
+      case 'instagram':
+        return instagramAdapter.findProfiles(searchType, county, keys.serper);
+
+      case 'jina-reader':
+        const jinaResults = await jinaAdapter.search(`${searchType} ${county} UK`);
+        return jinaResults?.data ? [jinaResults.data] : [];
+
+      default:
+        return [];
+    }
+  }
+
+  // ── Run Instagram-specific scan ──
+  async runInstagramScan(options = {}) {
+    if (this.isRunning) return { error: 'Already running' };
+    if (!this.state.apiKeys.serper) return { error: 'Serper API key required for Instagram discovery' };
+
+    this.isRunning = true;
+    this.abortController = new AbortController();
+    const results = { profiles: [], found: 0, searched: 0 };
+
+    const counties = options.counties || Object.keys(googlePlacesAdapter.countyCoords);
+    const searchTerms = [
+      'wedding planner', 'event planner', 'mobile bar', 'cocktail bar',
+      'event stylist', 'wedding venue', 'party planner', 'event catering',
+      'luxury wedding', 'festival bar', 'popup bar', 'event design',
+    ];
+
+    const totalSteps = counties.length * searchTerms.length;
+    let step = 0;
+
+    try {
+      for (const county of counties) {
+        if (this.abortController.signal.aborted) break;
+
+        for (const term of searchTerms) {
+          if (this.abortController.signal.aborted) break;
+          step++;
+          const pct = Math.round((step / totalSteps) * 100);
+
+          this.onProgress?.({
+            message: `[${pct}%] Instagram: "${term}" in ${county}`,
+            progress: pct,
+            found: results.found,
+          });
+
+          try {
+            const profiles = await instagramAdapter.findProfiles(term, county, this.state.apiKeys.serper);
+            results.searched++;
+
+            for (const profile of profiles) {
+              const lead = normalizeToLead({
+                name: profile.title?.replace(/ • Instagram.*$/, '').replace(/\(@.*\)/, '').trim(),
+                description: profile.bio,
+                website: '',
+                city: '',
+                county,
+                category: term,
+              }, { id: 'instagram', defaultCategory: 'Instagram Lead' });
+
+              lead.instagram_url = profile.profileUrl;
+              lead.instagram_username = profile.username;
+
+              if (this.saveScrapedLead(lead)) {
+                results.found++;
+                results.profiles.push(profile);
+                this.onLeadFound?.(lead);
+              }
+            }
+          } catch (err) {
+            // Continue on error
+          }
+        }
+      }
+    } finally {
+      this.isRunning = false;
+      this.state.lastRun = new Date().toISOString();
+      this.saveState();
+    }
+
+    return results;
+  }
+
+  // ── Enrich existing leads with website scraping ──
+  async enrichLeadsWithJina(leads) {
+    const results = { enriched: 0, errors: 0 };
+
+    for (const lead of leads) {
+      if (!lead.website || lead.contact_email) continue;
+
+      this.onProgress?.({
+        message: `Scraping ${lead.venue_name || lead.website}...`,
+        enriched: results.enriched,
+      });
+
+      try {
+        const url = lead.website.startsWith('http') ? lead.website : `https://${lead.website}`;
+        const data = await jinaAdapter.scrapeUrl(url);
+        if (data?.content) {
+          const contacts = jinaAdapter.extractContacts(data.content);
+          if (contacts.emails.length > 0 || contacts.phones.length > 0) {
+            results.enriched++;
+            this.onLeadFound?.({
+              ...lead,
+              contact_email: contacts.emails[0] || lead.contact_email,
+              phone: contacts.phones[0] || lead.phone,
+            });
+          }
+        }
+      } catch {
+        results.errors++;
+      }
+    }
+
+    return results;
+  }
+
+  // ── Get available sources based on configured API keys ──
+  getAvailableSources() {
+    const available = ['jina-reader']; // Always available (no key needed)
+    const keys = this.state.apiKeys;
+    if (keys.companiesHouse) available.push('companies-house');
+    if (keys.googlePlaces) available.push('google-places');
+    if (keys.serper) available.push('serper', 'instagram');
+    return available;
+  }
+
+  // ── Get adapter info for UI ──
+  getAdapterInfo() {
+    return Object.values(this.adapters).map(a => ({
+      id: a.id,
+      name: a.name,
+      description: a.description,
+      freeLimit: a.freeLimit,
+      technique: a.technique,
+      configured: this.isAdapterConfigured(a.id),
+    }));
+  }
+
+  isAdapterConfigured(adapterId) {
+    const keys = this.state.apiKeys;
+    switch (adapterId) {
+      case 'jina-reader': return true; // No key needed
+      case 'companies-house': return !!keys.companiesHouse;
+      case 'google-places': return !!keys.googlePlaces;
+      case 'serper': return !!keys.serper;
+      case 'instagram': return !!keys.serper; // Uses Serper
+      case 'hunter': return !!keys.hunter;
+      default: return false;
+    }
+  }
+}
+
+// Singleton instance
+const scraperEngine = new ScraperEngine();
+
+export {
+  scraperEngine,
+  ScraperEngine,
+  jinaAdapter,
+  companiesHouseAdapter,
+  googlePlacesAdapter,
+  serperAdapter,
+  instagramAdapter,
+  hunterAdapter,
+  normalizeToLead,
+  RateLimiter,
+};
+
+export default scraperEngine;

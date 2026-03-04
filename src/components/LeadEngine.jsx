@@ -9,6 +9,7 @@ import { NEW_VENUE_LEADS } from "../lib/newVenueLeads";
 import CSVImport from "./CSVImport";
 import CountyMap from "./CountyMap";
 import AgentPanel from "./AgentPanel";
+import ScraperPanel from "./ScraperPanel";
 
 // ═══════════════════════════════════════════════════════════════
 // HH&T Lead Generation CRM — White Editorial Design
@@ -279,9 +280,9 @@ export default function LeadEngineCRM() {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ display: "flex", background: C.bgWarm, borderRadius: 8, padding: 3, border: `1px solid ${C.borderLight}` }}>
-            {["map", "kanban", "table", "stats", "agents"].map(v => (
+            {["map", "kanban", "table", "stats", "agents", "scraper"].map(v => (
               <button key={v} onClick={() => { setView(v); if (v === "map") setFilterCounty("All"); }} style={{ padding: "6px 16px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: F.sans, background: view === v ? C.card : "transparent", color: view === v ? C.ink : C.inkMuted, boxShadow: view === v ? "0 1px 3px rgba(0,0,0,0.08)" : "none", transition: "all .2s" }}>
-                {v === "map" ? "🗺 Map" : v === "agents" ? "🤖 Agents" : v.charAt(0).toUpperCase() + v.slice(1)}
+                {v === "map" ? "🗺 Map" : v === "agents" ? "🤖 Agents" : v === "scraper" ? "🌐 Scraper" : v.charAt(0).toUpperCase() + v.slice(1)}
               </button>
             ))}
           </div>
@@ -321,6 +322,15 @@ export default function LeadEngineCRM() {
         {view === "table" && <TableView leads={filteredLeads} onSelect={setSelectedLead} onMove={moveToStage} onPitch={setPitchModal} />}
         {view === "stats" && <StatsView leads={leads} stats={stats} />}
         {view === "agents" && <AgentPanel leads={leads} onUpdateLead={updateLead} />}
+        {view === "scraper" && <ScraperPanel leads={leads} onAddLeads={(newLeads) => {
+          setLeads(prev => {
+            const existingNames = new Set(prev.map(l => (l.venue_name || '').toLowerCase()));
+            const deduped = newLeads.filter(l => !existingNames.has((l.venue_name || '').toLowerCase()));
+            const merged = [...prev, ...deduped];
+            localStorage.setItem("hht_pipeline_v3", JSON.stringify(merged));
+            return merged;
+          });
+        }} />}
       </div>
 
       {/* MODALS */}
