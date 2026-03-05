@@ -42,7 +42,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
   const [schedule, setSchedule] = useState(() => scraperEngine.state.schedule || {});
   const [selectedCounties, setSelectedCounties] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
-  const [scanType, setScanType] = useState("full"); // full | instagram | enrich | extended | reviews
+  const [scanType, setScanType] = useState("full"); // full | instagram | enrich | extended | reviews | concierge | outsourcer | verify | apollo
   const logRef = useRef([]);
   const [logLines, setLogLines] = useState([]);
 
@@ -95,6 +95,18 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
         });
       } else if (scanType === "reviews") {
         results = await scraperEngine.enrichWithReviews(leads || []);
+      } else if (scanType === "concierge") {
+        results = await scraperEngine.runConciergeScan({
+          counties: selectedCounties.length > 0 ? selectedCounties : undefined,
+        });
+      } else if (scanType === "outsourcer") {
+        results = await scraperEngine.runOutsourcerScan({
+          counties: selectedCounties.length > 0 ? selectedCounties : undefined,
+        });
+      } else if (scanType === "verify") {
+        results = await scraperEngine.verifyEmails(leads || []);
+      } else if (scanType === "apollo") {
+        results = await scraperEngine.enrichWithApollo(leads || []);
       } else {
         results = await scraperEngine.runFullScan({
           counties: selectedCounties.length > 0 ? selectedCounties : undefined,
@@ -256,7 +268,11 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                 { key: "serper", label: "Serper.dev", hint: "Free: 2,500 queries. Get key at serper.dev", unlocks: "Google Search + Instagram Discovery" },
                 { key: "companiesHouse", label: "Companies House", hint: "Free & unlimited. Get key at developer.company-information.service.gov.uk", unlocks: "UK company register by SIC code" },
                 { key: "googlePlaces", label: "Google Places", hint: "Free: 10,000/month. Get key at console.cloud.google.com", unlocks: "Business search by location" },
-                { key: "hunter", label: "Hunter.io", hint: "Free: 25/month. Get key at hunter.io", unlocks: "Email address discovery" },
+                { key: "hunter", label: "Hunter.io", hint: "Free: 25/month. Get key at hunter.io", unlocks: "Email discovery + verification" },
+                { key: "apollo", label: "Apollo.io", hint: "Free: 60/month. Get key at apollo.io", unlocks: "Company enrichment + people search" },
+                { key: "proxycurl", label: "Proxycurl", hint: "10 free credits. Get key at proxycurl.com", unlocks: "LinkedIn profile enrichment" },
+                { key: "zeroBounce", label: "ZeroBounce", hint: "Free: 100/month. Get key at zerobounce.net", unlocks: "Email verification + demographics" },
+                { key: "outscraper", label: "Outscraper", hint: "Free tier available. Get key at outscraper.com", unlocks: "Google Maps popular times data" },
               ].map(api => (
                 <div key={api.key}>
                   <label style={{ fontSize: 11, fontWeight: 700, color: C.inkSec, display: "block", marginBottom: 4 }}>
@@ -294,7 +310,11 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                 { id: "extended", label: "Extended Discovery", desc: "Eventbrite, TripAdvisor, Facebook, Twitter, venue directories & more" },
                 { id: "instagram", label: "Instagram Discovery", desc: "Find event businesses via Instagram profiles & hashtags" },
                 { id: "reviews", label: "Review Mining", desc: "Enrich leads with Google Reviews data and event intent signals" },
+                { id: "concierge", label: "Concierge & Luxury", desc: "Private members clubs, yacht clubs, luxury concierge, HNWI event planners, estate managers" },
+                { id: "outsourcer", label: "Outsourcer Venues", desc: "Dry hire, blank canvas & country house venues that hire outside bar providers" },
                 { id: "enrich", label: "Website Enrichment", desc: "Scrape existing lead websites for contact details using Jina AI" },
+                { id: "apollo", label: "Apollo Enrichment", desc: "Enrich leads with firmographics — company size, industry, revenue, key personnel" },
+                { id: "verify", label: "Email Verification", desc: "Waterfall verify emails via Hunter + ZeroBounce with demographic enrichment" },
               ].map(st => (
                 <button
                   key={st.id}
@@ -313,7 +333,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
           </div>
 
           {/* County Filter */}
-          {scanType !== "enrich" && scanType !== "reviews" && (
+          {!["enrich", "reviews", "verify", "apollo"].includes(scanType) && (
             <div style={cardStyle({ marginBottom: 16 })}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, fontFamily: F.serif }}>
@@ -629,6 +649,13 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                 { name: "Twitter/X Intel", tech: "Serper site:twitter.com", desc: "Monitors Twitter/X for event intent signals — hiring event staff, seeking venues, planning corporate events. Real-time lead discovery." },
                 { name: "Venue Directories", tech: "Multi-directory Aggregator", desc: "Searches Hire Space, Square Meal, VenueScanner, Tagvenue, HeadBox, DesignMyNight, Bridebook, and Hitched simultaneously." },
                 { name: "Advanced Scoring", tech: "Apollo/ZoomInfo-style Model", desc: "Multi-signal lead scoring: Fit (40%) based on business type & size, Intent (35%) from review keywords & social activity, Completeness (25%) from data quality." },
+                { name: "Concierge Market", tech: "Multi-vertical Luxury Search", desc: "Targets private members clubs, luxury concierge (Quintessentially, Ten Group), estate managers, yacht/polo clubs, fashion brands, and corporate hospitality." },
+                { name: "Outsourcer Venues", tech: "Enhanced Google Places + Filters", desc: "Finds dry hire, blank canvas, and country house venues that outsource bar services. Excludes bars/pubs. Scores outsource likelihood." },
+                { name: "Apollo.io", tech: "Company Enrichment API", desc: "Enriches leads with firmographics — company size, industry, annual revenue, key personnel titles (Event Manager, Head of Events, Concierge)." },
+                { name: "LinkedIn/Proxycurl", tech: "Profile Enrichment + People Search", desc: "Find decision-makers: Event Managers, Concierge, Hospitality Directors, F&B Managers at target companies." },
+                { name: "Email Waterfall", tech: "Hunter + ZeroBounce Cascade", desc: "Multi-step verification: syntax check → Hunter validation → ZeroBounce with demographic enrichment (name, gender, location)." },
+                { name: "Outscraper", tech: "Google Maps Popular Times", desc: "Identifies high-traffic venues with consistent weekend/evening peaks — strong indicators of regular event hosting." },
+                { name: "Instagram Enhanced", tech: "Hashtag + Venue Profile Mining", desc: "Monitors event hashtags (#corporateevent, #luxurywedding, #polopony). Finds venue Instagram profiles. Excludes bars/pubs." },
               ].map(item => (
                 <div key={item.name} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   <div style={{ width: 140, flexShrink: 0 }}>

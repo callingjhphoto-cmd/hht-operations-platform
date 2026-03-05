@@ -836,6 +836,705 @@ const venueDirectoryAdapter = {
   },
 };
 
+// ── 14. Apollo.io Enrichment ──
+// Pattern from Apollo.io: company enrichment by domain returns firmographics, key personnel
+const apolloAdapter = {
+  id: 'apollo',
+  name: 'Apollo.io Enrichment',
+  description: 'Company enrichment by domain — industry, size, revenue, key event/hospitality personnel',
+  freeLimit: '60 credits/month free',
+  technique: 'REST API — firmographics + people search',
+  rateLimit: new RateLimiter(10),
+
+  async enrichCompany(domain, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch('https://api.apollo.io/api/v1/organizations/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: apiKey, domain }),
+    });
+    return response.json();
+  },
+
+  async searchPeople(filters, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch('https://api.apollo.io/api/v1/mixed_people/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: apiKey,
+        person_titles: filters.titles || [
+          'Event Manager', 'Head of Events', 'Events Director', 'Hospitality Manager',
+          'Venue Manager', 'Wedding Coordinator', 'Conference Manager', 'Banqueting Manager',
+          'F&B Manager', 'Concierge', 'Head Concierge', 'Private Events Manager',
+        ],
+        organization_industry_tag_ids: filters.industries,
+        person_locations: filters.locations || ['United Kingdom'],
+        per_page: 25,
+      }),
+    });
+    const data = await response.json();
+    return (data.people || []).map(p => ({
+      name: `${p.first_name || ''} ${p.last_name || ''}`.trim(),
+      title: p.title || '',
+      company: p.organization?.name || '',
+      email: p.email || '',
+      phone: p.phone_numbers?.[0]?.sanitized_number || '',
+      linkedin: p.linkedin_url || '',
+      website: p.organization?.website_url || '',
+      city: p.city || '',
+      county: p.state || '',
+      industry: p.organization?.industry || '',
+      employeeCount: p.organization?.estimated_num_employees || 0,
+    }));
+  },
+};
+
+// ── 15. LinkedIn / Proxycurl ──
+// Pattern from Proxycurl: enrich LinkedIn URLs with structured profile data
+const linkedinAdapter = {
+  id: 'linkedin',
+  name: 'LinkedIn (Proxycurl)',
+  description: 'Enrich LinkedIn profiles — find event managers, concierge contacts, hospitality decision-makers',
+  freeLimit: '10 credits on signup, then ~$0.01/profile',
+  technique: 'Proxycurl REST API — profile enrichment + people search',
+  rateLimit: new RateLimiter(10),
+
+  async enrichProfile(linkedinUrl, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://nubela.co/proxycurl/api/v2/linkedin?url=${encodeURIComponent(linkedinUrl)}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+    );
+    return response.json();
+  },
+
+  async searchPeople(query, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://nubela.co/proxycurl/api/search/person?country=GB&current_role_title=${encodeURIComponent(query)}&enrich_profiles=enrich`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+    );
+    const data = await response.json();
+    return (data.results || []).map(p => ({
+      name: p.profile?.full_name || '',
+      title: p.profile?.headline || '',
+      company: p.profile?.experiences?.[0]?.company || '',
+      linkedin: p.linkedin_profile_url || '',
+      city: p.profile?.city || '',
+    }));
+  },
+
+  async companyEmployees(companyLinkedinUrl, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://nubela.co/proxycurl/api/linkedin/company/employees?url=${encodeURIComponent(companyLinkedinUrl)}&role_search=event%20OR%20hospitality%20OR%20concierge%20OR%20catering`,
+      { headers: { Authorization: `Bearer ${apiKey}` } },
+    );
+    return response.json();
+  },
+};
+
+// ── 16. Enhanced Google Places ──
+// Extended fields: cocktail attributes, editorial summaries, event-relevant types
+const enhancedGooglePlacesAdapter = {
+  id: 'enhanced-google-places',
+  name: 'Enhanced Google Places',
+  description: 'Deep venue analysis — cocktail/event attributes, editorial summaries, hours, price level',
+  freeLimit: 'Included in Google Places quota (10K/month)',
+  technique: 'Places API (New) — extended field masks for event venue profiling',
+  rateLimit: new RateLimiter(10),
+
+  // Fields specifically relevant to identifying venues that outsource bar services
+  fieldMask: [
+    'displayName', 'formattedAddress', 'nationalPhoneNumber', 'websiteUri',
+    'rating', 'userRatingCount', 'reviews', 'editorialSummary',
+    'currentOpeningHours', 'regularOpeningHours', 'priceLevel', 'primaryType', 'types',
+    'servesCocktails', 'servesWine', 'servesBeer', 'liveMusic',
+    'outdoorSeating', 'reservable', 'dineIn', 'goodForGroups',
+    'photos', 'businessStatus',
+  ].join(','),
+
+  // Venue types that typically outsource bar services (NOT bars themselves)
+  outsourcerTypes: [
+    'country house', 'manor house', 'stately home', 'castle', 'estate',
+    'hotel', 'boutique hotel', 'spa hotel', 'conference centre', 'conference center',
+    'wedding venue', 'barn venue', 'marquee venue', 'garden venue',
+    'gallery', 'museum', 'art gallery', 'cultural centre',
+    'yacht club', 'polo club', 'golf club', 'country club', 'members club',
+    'racecourse', 'race course', 'cricket ground', 'sports venue',
+    'private dining', 'function room', 'banqueting suite', 'ballroom',
+    'rooftop venue', 'warehouse venue', 'loft venue', 'industrial venue',
+    'botanical garden', 'orangery', 'conservatory', 'pavilion',
+    'village hall', 'town hall', 'civic centre',
+    'corporate venue', 'training centre', 'business centre',
+  ],
+
+  // Types to EXCLUDE (they have their own bars)
+  excludeTypes: [
+    'bar', 'pub', 'nightclub', 'cocktail bar', 'wine bar', 'brewery',
+    'taproom', 'tavern', 'lounge bar', 'sports bar',
+  ],
+
+  async getPlaceDetails(placeId, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://places.googleapis.com/v1/places/${placeId}`,
+      {
+        headers: {
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': this.fieldMask,
+        },
+      },
+    );
+    return response.json();
+  },
+
+  // Search specifically for venue types that outsource bar services
+  async searchOutsourcerVenues(county, apiKey) {
+    const results = [];
+    const searchQueries = [
+      `wedding venue hire ${county}`,
+      `country house venue ${county}`,
+      `conference venue ${county}`,
+      `private hire venue ${county}`,
+      `event space no bar ${county}`,
+      `dry hire venue ${county}`, // Dry hire = no in-house catering
+      `blank canvas venue ${county}`,
+    ];
+
+    for (const query of searchQueries) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://places.googleapis.com/v1/places:searchText', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': apiKey,
+            'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.websiteUri,places.nationalPhoneNumber,places.primaryType,places.editorialSummary,places.priceLevel',
+          },
+          body: JSON.stringify({ textQuery: query, locationBias: { rectangle: googlePlacesAdapter.countyCoords[county] }, languageCode: 'en' }),
+        });
+        const data = await response.json();
+        for (const place of (data.places || [])) {
+          // Filter out bars/pubs
+          const name = (place.displayName?.text || '').toLowerCase();
+          const type = (place.primaryType || '').toLowerCase();
+          const isBar = this.excludeTypes.some(t => name.includes(t) || type.includes(t));
+          if (!isBar) {
+            results.push({
+              ...place,
+              name: place.displayName?.text || '',
+              address: place.formattedAddress || '',
+              county,
+              category: this.categorizeVenue(place),
+              outsource_indicator: this.outsourceScore(place),
+            });
+          }
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  categorizeVenue(place) {
+    const name = (place.displayName?.text || '').toLowerCase();
+    const summary = (place.editorialSummary?.text || '').toLowerCase();
+    const combined = `${name} ${summary}`;
+    for (const vType of this.outsourcerTypes) {
+      if (combined.includes(vType)) return vType;
+    }
+    return place.primaryType || 'venue';
+  },
+
+  // Score how likely this venue is to outsource bar services
+  outsourceScore(place) {
+    let score = 0;
+    const summary = (place.editorialSummary?.text || '').toLowerCase();
+    const name = (place.displayName?.text || '').toLowerCase();
+    const combined = `${name} ${summary}`;
+
+    // Strong outsource indicators
+    if (combined.includes('dry hire')) score += 30;
+    if (combined.includes('blank canvas')) score += 25;
+    if (combined.includes('outside caterer')) score += 30;
+    if (combined.includes('bring your own')) score += 20;
+    if (combined.includes('approved supplier') || combined.includes('preferred supplier')) score += 20;
+
+    // Venue types that commonly outsource
+    if (combined.includes('country house') || combined.includes('manor')) score += 15;
+    if (combined.includes('barn') || combined.includes('marquee')) score += 15;
+    if (combined.includes('estate') || combined.includes('castle')) score += 15;
+    if (combined.includes('gallery') || combined.includes('museum')) score += 10;
+
+    // Premium indicators
+    if (place.priceLevel === 'PRICE_LEVEL_EXPENSIVE' || place.priceLevel === 'PRICE_LEVEL_VERY_EXPENSIVE') score += 10;
+    if (place.rating >= 4.5) score += 5;
+
+    return Math.min(score, 100);
+  },
+};
+
+// ── 17. Concierge & Luxury Market ──
+// Target: private members clubs, luxury travel concierge, wealth managers' events, HNWI services
+const conciergeMarketAdapter = {
+  id: 'concierge-market',
+  name: 'Concierge & Luxury Market',
+  description: 'Private members clubs, luxury concierge, HNWI event planners, estate managers, yacht clubs',
+  freeLimit: 'Uses Serper credits',
+  technique: 'Multi-site Google Search targeting luxury/concierge verticals',
+  rateLimit: new RateLimiter(8),
+
+  // Luxury venue & concierge search queries by vertical
+  verticals: {
+    privateMembers: {
+      label: 'Private Members Clubs',
+      queries: [
+        'private members club event hire',
+        'private members club function room',
+        'exclusive members club private dining',
+        'Soho House style private club event',
+      ],
+    },
+    luxuryConcierge: {
+      label: 'Luxury Concierge Services',
+      queries: [
+        'luxury concierge service events',
+        'HNWI concierge event planning UK',
+        'private client concierge party planning',
+        'bespoke event concierge London',
+        'quintessentially events', // Major luxury concierge
+        'ten lifestyle group events',
+        'john paul concierge events',
+      ],
+    },
+    estateManagers: {
+      label: 'Estate & Property Managers',
+      queries: [
+        'estate manager private event',
+        'country estate event hire',
+        'private estate venue hire UK',
+        'stately home wedding venue',
+        'National Trust venue hire events',
+        'English Heritage venue hire',
+      ],
+    },
+    yachtPolo: {
+      label: 'Yacht & Polo Clubs',
+      queries: [
+        'yacht club event hire UK',
+        'polo club hospitality corporate',
+        'royal yacht squadron events',
+        'cowes week corporate hospitality',
+        'polo event hospitality UK',
+        'regatta corporate hospitality',
+      ],
+    },
+    luxuryWedding: {
+      label: 'Luxury Wedding Venues',
+      queries: [
+        'luxury wedding venue outside caterer',
+        'exclusive wedding venue dry hire UK',
+        'castle wedding venue bar hire',
+        'luxury marquee wedding',
+        'country house wedding bar service',
+        'stately home wedding bar hire',
+      ],
+    },
+    corporateHospitality: {
+      label: 'Corporate Hospitality',
+      queries: [
+        'corporate hospitality event provider',
+        'prestige corporate event venue UK',
+        'boardroom dining event service',
+        'corporate entertaining venue London',
+        'private corporate event space',
+      ],
+    },
+    fashionLuxury: {
+      label: 'Fashion & Luxury Brands',
+      queries: [
+        'luxury brand launch event venue UK',
+        'fashion show event hire London',
+        'product launch party venue',
+        'luxury retail event space',
+        'VIP brand experience event',
+      ],
+    },
+  },
+
+  // Specific directories & platforms for the luxury market
+  luxuryDirectories: [
+    { domain: 'quintessentially.com', name: 'Quintessentially' },
+    { domain: 'tengroup.com', name: 'Ten Group' },
+    { domain: 'pfrankly.com', name: 'Frankly' },
+    { domain: 'hardens.com', name: 'Hardens' },
+    { domain: 'theknot.com', name: 'The Knot' },
+    { domain: 'tatler.com', name: 'Tatler' },
+    { domain: 'countrylife.co.uk', name: 'Country Life' },
+    { domain: 'hurlingham.co.uk', name: 'Hurlingham Club' },
+    { domain: 'annabelsmember.co.uk', name: 'Annabels' },
+    { domain: 'cliveden.co.uk', name: 'Cliveden House' },
+  ],
+
+  async searchVertical(vertical, county, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+    const config = this.verticals[vertical];
+    if (!config) return [];
+
+    for (const query of config.queries) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: county ? `${query} ${county}` : `${query} UK`,
+            num: 10, gl: 'uk', hl: 'en',
+          }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          // Filter out bars, pubs, and irrelevant results
+          const title = (item.title || '').toLowerCase();
+          const barTerms = ['bar hire', 'mobile bar', 'cocktail bar company', ' pub ', 'brewery'];
+          if (barTerms.some(t => title.includes(t))) continue;
+
+          results.push({
+            name: item.title?.replace(/\s*[-|].*$/, '').replace(/,.*$/, '').trim(),
+            description: item.snippet || '',
+            link: item.link,
+            county: county || 'UK',
+            category: `${config.label} — ${vertical}`,
+            market_tier: 'luxury',
+            vertical,
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  async searchAllVerticals(county, serperKey) {
+    const allResults = [];
+    for (const vertical of Object.keys(this.verticals)) {
+      const results = await this.searchVertical(vertical, county, serperKey);
+      allResults.push(...results);
+    }
+    return allResults;
+  },
+
+  // Search luxury directories for event spaces
+  async searchLuxuryDirectories(county, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    for (const dir of this.luxuryDirectories) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `site:${dir.domain} event ${county ? county : 'London'}`,
+            num: 5, gl: 'uk', hl: 'en',
+          }),
+        });
+        const data = await response.json();
+        for (const item of (data.organic || [])) {
+          results.push({
+            name: item.title?.replace(/\s*[-|].*$/, '').trim(),
+            description: item.snippet || '',
+            link: item.link,
+            county: county || 'UK',
+            category: `Luxury Directory (${dir.name})`,
+            market_tier: 'luxury',
+            directory_source: dir.name,
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+};
+
+// ── 18. Email Waterfall Verification ──
+// Pattern from Apollo/ZoomInfo: cascade through verification services
+const emailVerifier = {
+  id: 'email-verifier',
+  name: 'Email Verification Waterfall',
+  description: 'Multi-step email verification — Hunter + ZeroBounce cascade for maximum accuracy',
+  freeLimit: 'Hunter 50/mo + ZeroBounce 100/mo free',
+  technique: 'Waterfall: syntax → MX → Hunter → ZeroBounce with demographic enrichment',
+  rateLimit: new RateLimiter(5),
+
+  disposableDomains: new Set([
+    'mailinator.com', 'guerrillamail.com', 'tempmail.com', 'throwaway.email',
+    'temp-mail.org', 'yopmail.com', 'trashmail.com', 'sharklasers.com',
+  ]),
+
+  basicValidation(email) {
+    if (!email || typeof email !== 'string') return { valid: false, reason: 'empty' };
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!re.test(email)) return { valid: false, reason: 'invalid_syntax' };
+    const domain = email.split('@')[1].toLowerCase();
+    if (this.disposableDomains.has(domain)) return { valid: false, reason: 'disposable' };
+    // Generic addresses less useful for B2B
+    const generic = ['info@', 'hello@', 'contact@', 'admin@', 'support@', 'noreply@'];
+    const isGeneric = generic.some(g => email.toLowerCase().startsWith(g));
+    return { valid: true, isGeneric, domain };
+  },
+
+  async verifyWithHunter(email, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(email)}&api_key=${apiKey}`,
+    );
+    const data = await response.json();
+    return data.data || {};
+  },
+
+  async verifyWithZeroBounce(email, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://api.zerobounce.net/v2/validate?api_key=${apiKey}&email=${encodeURIComponent(email)}`,
+    );
+    return response.json();
+  },
+
+  async verify(email, apiKeys = {}) {
+    // Step 1: Basic validation
+    const basic = this.basicValidation(email);
+    if (!basic.valid) return { valid: false, reason: basic.reason, confidence: 100 };
+
+    // Step 2: Hunter verification
+    if (apiKeys.hunter) {
+      try {
+        const hunter = await this.verifyWithHunter(email, apiKeys.hunter);
+        if (hunter.status === 'valid') return { valid: true, confidence: 90, source: 'hunter', isGeneric: basic.isGeneric };
+        if (hunter.status === 'invalid') return { valid: false, reason: 'hunter_invalid', confidence: 90 };
+      } catch { /* fall through to next */ }
+    }
+
+    // Step 3: ZeroBounce for uncertain/remaining
+    if (apiKeys.zeroBounce) {
+      try {
+        const zb = await this.verifyWithZeroBounce(email, apiKeys.zeroBounce);
+        return {
+          valid: zb.status === 'valid',
+          reason: zb.status !== 'valid' ? zb.sub_status || zb.status : undefined,
+          confidence: 95,
+          source: 'zerobounce',
+          isGeneric: basic.isGeneric,
+          demographics: { firstname: zb.firstname, lastname: zb.lastname, gender: zb.gender, location: zb.location },
+        };
+      } catch { /* fall through */ }
+    }
+
+    // No verification available — return syntax-only result
+    return { valid: null, reason: 'unverified', confidence: 30, isGeneric: basic.isGeneric };
+  },
+
+  // Batch verify an array of leads
+  async verifyLeads(leads, apiKeys) {
+    const results = { verified: 0, invalid: 0, unverified: 0 };
+    for (const lead of leads) {
+      if (!lead.contact_email) { results.unverified++; continue; }
+      const result = await this.verify(lead.contact_email, apiKeys);
+      lead.email_verified = result.valid;
+      lead.email_confidence = result.confidence;
+      lead.email_demographics = result.demographics;
+      if (result.valid === true) results.verified++;
+      else if (result.valid === false) results.invalid++;
+      else results.unverified++;
+    }
+    return results;
+  },
+};
+
+// ── 19. Outscraper — Popular Times & Busyness ──
+// Identifies high-traffic venues that host frequent events
+const outscraperAdapter = {
+  id: 'outscraper',
+  name: 'Outscraper (Popular Times)',
+  description: 'Google Maps popular times & busyness data — identify high-traffic event venues',
+  freeLimit: 'Free tier available',
+  technique: 'Outscraper REST API — popular times histograms + review extraction',
+  rateLimit: new RateLimiter(5),
+
+  async searchWithPopularTimes(query, apiKey) {
+    await this.rateLimit.throttle();
+    const response = await retryFetch(
+      `https://api.outscraper.com/maps/search-v3?query=${encodeURIComponent(query)}&limit=20&async=false`,
+      { headers: { 'X-API-KEY': apiKey } },
+    );
+    const data = await response.json();
+    return (data.data?.[0] || []).map(place => ({
+      name: place.name || '',
+      address: place.full_address || '',
+      phone: place.phone || '',
+      website: place.site || '',
+      rating: place.rating || 0,
+      reviews: place.reviews || 0,
+      category: place.type || place.subtypes?.[0] || '',
+      popular_times: place.popular_times || null,
+      // Compute event-friendliness from popular times
+      weekend_peak: this.analyzeWeekendPeaks(place.popular_times),
+      evening_peak: this.analyzeEveningPeaks(place.popular_times),
+    }));
+  },
+
+  analyzeWeekendPeaks(popularTimes) {
+    if (!popularTimes) return 0;
+    // Saturday + Sunday evening peaks indicate event hosting
+    const sat = popularTimes.Saturday || popularTimes.saturday || [];
+    const sun = popularTimes.Sunday || popularTimes.sunday || [];
+    const satPeak = Math.max(...(sat.map?.(h => h.percentage || 0) || [0]));
+    const sunPeak = Math.max(...(sun.map?.(h => h.percentage || 0) || [0]));
+    return Math.round((satPeak + sunPeak) / 2);
+  },
+
+  analyzeEveningPeaks(popularTimes) {
+    if (!popularTimes) return 0;
+    // Look at 6pm-11pm across all days for consistent evening event patterns
+    let totalPeak = 0;
+    let days = 0;
+    for (const day of Object.values(popularTimes)) {
+      if (!Array.isArray(day)) continue;
+      const eveningHours = day.filter(h => (h.hour || 0) >= 18 && (h.hour || 0) <= 23);
+      if (eveningHours.length > 0) {
+        totalPeak += Math.max(...eveningHours.map(h => h.percentage || 0));
+        days++;
+      }
+    }
+    return days > 0 ? Math.round(totalPeak / days) : 0;
+  },
+};
+
+// ── 20. Instagram Hashtag & Content Monitoring ──
+// Enhanced Instagram: hashtag monitoring, event detection, highlight reel analysis
+const instagramEnhancedAdapter = {
+  id: 'instagram-enhanced',
+  name: 'Instagram Enhanced',
+  description: 'Hashtag monitoring for event signals, content analysis for venue identification',
+  freeLimit: 'Uses Serper + Jina credits',
+  technique: 'Google hashtag search + Jina content extraction + event keyword analysis',
+  rateLimit: new RateLimiter(8),
+
+  // Event-related hashtags for the UK bartending/events market
+  eventHashtags: [
+    'corporateevent', 'londonevents', 'weddingbar', 'mobilebar', 'cocktailcatering',
+    'luxurywedding', 'ukwedding', 'eventvenue', 'weddingvenue', 'privateevent',
+    'corporatehospitality', 'productlaunch', 'brandevent', 'galaevent', 'charityball',
+    'polopony', 'regatta', 'ascot', 'henley', 'cheltenham', 'goodwood',
+    'dryherevenue', 'barnwedding', 'countryhousewedding', 'marquee',
+    'luxuryevent', 'bespokeevent', 'vipevent', 'exclusiveevent',
+  ],
+
+  // Venue search terms — NOT bars/pubs
+  venueSearchTerms: [
+    'wedding venue', 'event venue', 'corporate venue', 'function venue',
+    'country house events', 'castle wedding', 'estate venue',
+    'private hire venue', 'dry hire venue', 'blank canvas venue',
+  ],
+
+  async searchHashtag(hashtag, county, serperKey) {
+    if (!serperKey) return [];
+    await this.rateLimit.throttle();
+    try {
+      const response = await retryFetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: `site:instagram.com "${hashtag}" ${county ? county : 'UK'} venue`,
+          num: 10, gl: 'uk', tbs: 'qdr:m', // Last month
+        }),
+      });
+      const data = await response.json();
+      return (data.organic || []).map(r => ({
+        name: r.title?.replace(/ on Instagram.*$/, '').replace(/@\w+/, '').trim(),
+        description: r.snippet || '',
+        link: r.link,
+        instagram_url: r.link,
+        county: county || 'UK',
+        category: 'Instagram (Hashtag)',
+        hashtag,
+      }));
+    } catch { return []; }
+  },
+
+  async searchVenueProfiles(county, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    for (const term of this.venueSearchTerms) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `site:instagram.com "${term}" "${county}" -bar -pub -brewery -taproom`,
+            num: 10, gl: 'uk',
+          }),
+        });
+        const data = await response.json();
+        for (const r of (data.organic || [])) {
+          results.push({
+            name: r.title?.replace(/ on Instagram.*$/, '').replace(/ \(@\w+\)/, '').trim(),
+            description: r.snippet || '',
+            link: r.link,
+            instagram_url: r.link,
+            county,
+            category: `Venue Instagram (${term})`,
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  // Deep scrape a single Instagram profile for contact & event data
+  async analyzeProfile(profileUrl) {
+    try {
+      const data = await jinaAdapter.scrapeUrl(profileUrl);
+      if (!data?.content) return null;
+      const content = data.content;
+      const contacts = jinaAdapter.extractContacts(content);
+
+      // Extract structured fields
+      const bioMatch = content.match(/(?:bio|description)[:\s]*([^\n]+)/i);
+      const followersMatch = content.match(/([\d,.]+[KMkm]?)\s*(?:followers)/i);
+      const linktreeMatch = content.match(/(linktr\.ee|linkin\.bio|bit\.ly|taplink)[^\s]*/i);
+
+      // Event-related keywords in bio/content
+      const eventKeywords = ['event', 'wedding', 'corporate', 'private hire', 'venue', 'function', 'reception', 'gala', 'dinner'];
+      const hasEventSignals = eventKeywords.some(k => content.toLowerCase().includes(k));
+
+      // Luxury indicators
+      const luxuryKeywords = ['luxury', 'exclusive', 'bespoke', 'premium', 'five star', '5 star', 'michelin', 'award-winning'];
+      const hasLuxurySignals = luxuryKeywords.some(k => content.toLowerCase().includes(k));
+
+      return {
+        bio: bioMatch?.[1]?.trim(),
+        followers: followersMatch?.[1],
+        linktree: linktreeMatch?.[0],
+        emails: contacts.emails,
+        phones: contacts.phones,
+        hasEventSignals,
+        hasLuxurySignals,
+        market_tier: hasLuxurySignals ? 'luxury' : 'standard',
+      };
+    } catch { return null; }
+  },
+};
+
 // ── 13. Advanced Lead Scoring ──
 // Pattern from Apollo.io + ZoomInfo: multi-signal scoring model
 // Combines: data completeness, engagement signals, fit signals, timing signals
@@ -843,11 +1542,15 @@ const advancedLeadScorer = {
   // Fit signals — how well the lead matches ideal customer profile
   fitScore(lead) {
     let score = 0;
-    // Category fit
-    const highFitCategories = ['wedding venue', 'event venue', 'hotel', 'cocktail bar', 'private hire', 'luxury venue'];
-    const medFitCategories = ['restaurant', 'bar', 'pub', 'conference venue', 'gallery'];
+    // Category fit — prioritize venues that outsource bar services
+    const topFitCategories = ['country house', 'manor', 'castle', 'estate', 'stately home', 'dry hire', 'blank canvas', 'marquee', 'barn venue'];
+    const highFitCategories = ['wedding venue', 'event venue', 'hotel', 'private hire', 'luxury venue', 'conference', 'gallery', 'museum', 'members club', 'yacht club', 'polo club', 'golf club', 'racecourse'];
+    const medFitCategories = ['restaurant', 'corporate venue', 'function room', 'banqueting', 'concierge'];
+    const negativeFit = ['bar', 'pub', 'nightclub', 'brewery', 'taproom', 'cocktail bar', 'wine bar'];
     const cat = (lead.category || '').toLowerCase();
-    if (highFitCategories.some(c => cat.includes(c))) score += 25;
+    if (negativeFit.some(c => cat.includes(c))) score -= 20; // Penalize bars — they don't outsource
+    else if (topFitCategories.some(c => cat.includes(c))) score += 30;
+    else if (highFitCategories.some(c => cat.includes(c))) score += 25;
     else if (medFitCategories.some(c => cat.includes(c))) score += 15;
     else score += 5;
 
@@ -862,12 +1565,15 @@ const advancedLeadScorer = {
     else if (dist <= 60) score += 10;
     else if (dist <= 100) score += 5;
 
-    // Premium signals
+    // Premium / outsource signals
     const desc = (lead.trigger_event || lead.description || '').toLowerCase();
-    if (desc.includes('luxury') || desc.includes('premium') || desc.includes('exclusive')) score += 10;
-    if (desc.includes('cocktail') || desc.includes('bar') || desc.includes('mixolog')) score += 10;
+    if (desc.includes('luxury') || desc.includes('premium') || desc.includes('exclusive') || desc.includes('bespoke')) score += 10;
+    if (desc.includes('outside caterer') || desc.includes('dry hire') || desc.includes('approved supplier')) score += 15;
+    if (desc.includes('concierge') || desc.includes('private client') || desc.includes('hnwi') || desc.includes('high net worth')) score += 15;
+    if (lead.market_tier === 'luxury') score += 10;
+    if (lead.outsource_indicator > 50) score += 10;
 
-    return Math.min(score, 80);
+    return Math.min(score, 100);
   },
 
   // Data completeness — more data = higher quality lead
@@ -956,6 +1662,13 @@ class ScraperEngine {
       'facebook': facebookAdapter,
       'twitter': twitterAdapter,
       'venue-directories': venueDirectoryAdapter,
+      'apollo': apolloAdapter,
+      'linkedin': linkedinAdapter,
+      'enhanced-google-places': enhancedGooglePlacesAdapter,
+      'concierge-market': conciergeMarketAdapter,
+      'email-verifier': emailVerifier,
+      'outscraper': outscraperAdapter,
+      'instagram-enhanced': instagramEnhancedAdapter,
     };
     this.leadScorer = advancedLeadScorer;
 
@@ -1282,12 +1995,15 @@ class ScraperEngine {
 
   // ── Get available sources based on configured API keys ──
   getAvailableSources() {
-    const available = ['jina-reader']; // Always available (no key needed)
+    const available = ['jina-reader'];
     const keys = this.state.apiKeys;
     if (keys.companiesHouse) available.push('companies-house');
-    if (keys.googlePlaces) available.push('google-places', 'google-reviews');
-    if (keys.serper) available.push('serper', 'instagram', 'eventbrite', 'review-platforms', 'facebook', 'twitter', 'venue-directories');
+    if (keys.googlePlaces) available.push('google-places', 'google-reviews', 'enhanced-google-places');
+    if (keys.serper) available.push('serper', 'instagram', 'instagram-enhanced', 'eventbrite', 'review-platforms', 'facebook', 'twitter', 'venue-directories', 'concierge-market');
     if (keys.hunter) available.push('hunter');
+    if (keys.apollo) available.push('apollo');
+    if (keys.proxycurl) available.push('linkedin');
+    if (keys.outscraper) available.push('outscraper');
     return available;
   }
 
@@ -1392,6 +2108,150 @@ class ScraperEngine {
     return results;
   }
 
+  // ── Run concierge & luxury market scan ──
+  async runConciergeScan(options = {}) {
+    if (this.isRunning) throw new Error('Scan already running');
+    this.isRunning = true;
+    this.abortController = new AbortController();
+
+    const counties = options.counties || ['London', 'Surrey', 'Kent', 'Oxfordshire', 'Berkshire', 'Buckinghamshire'];
+    const serperKey = this.state.apiKeys.serper;
+    const results = { found: 0, sources: {} };
+
+    try {
+      for (const county of counties) {
+        if (this.abortController.signal.aborted) break;
+
+        // Search all luxury verticals
+        this.onProgress?.({ message: `Concierge scan: ${county} — all verticals...`, found: results.found });
+        const verticalResults = await conciergeMarketAdapter.searchAllVerticals(county, serperKey);
+        results.sources['concierge-verticals'] = (results.sources['concierge-verticals'] || 0) + verticalResults.length;
+
+        for (const item of verticalResults) {
+          const lead = normalizeToLead(item, { id: 'concierge-market', defaultCategory: item.category || 'Luxury Venue' });
+          lead.county = county;
+          lead.market_tier = 'luxury';
+          lead.vertical = item.vertical;
+          const score = this.leadScorer.calculateScore(lead);
+          lead.advanced_score = score.total;
+          lead.score_grade = score.grade;
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+
+        // Search luxury directories
+        this.onProgress?.({ message: `Luxury directories: ${county}...`, found: results.found });
+        const dirResults = await conciergeMarketAdapter.searchLuxuryDirectories(county, serperKey);
+        results.sources['luxury-directories'] = (results.sources['luxury-directories'] || 0) + dirResults.length;
+
+        for (const item of dirResults) {
+          const lead = normalizeToLead(item, { id: 'concierge-market', defaultCategory: item.category || 'Luxury Directory' });
+          lead.county = county;
+          lead.market_tier = 'luxury';
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+      }
+    } finally {
+      this.isRunning = false;
+      this.state.lastRun = new Date().toISOString();
+      this.saveState();
+    }
+
+    return results;
+  }
+
+  // ── Run outsourcer venue scan — venues that hire outside bar providers ──
+  async runOutsourcerScan(options = {}) {
+    if (this.isRunning) throw new Error('Scan already running');
+    this.isRunning = true;
+    this.abortController = new AbortController();
+
+    const counties = options.counties || Object.keys(googlePlacesAdapter.countyCoords);
+    const googleKey = this.state.apiKeys.googlePlaces;
+    const serperKey = this.state.apiKeys.serper;
+    const results = { found: 0, sources: {} };
+
+    try {
+      for (const county of counties) {
+        if (this.abortController.signal.aborted) break;
+
+        // Enhanced Google Places — dry hire / blank canvas / outsourcer venues
+        if (googleKey) {
+          this.onProgress?.({ message: `Outsourcer venues: ${county} (Google Places)...`, found: results.found });
+          const venues = await enhancedGooglePlacesAdapter.searchOutsourcerVenues(county, googleKey);
+          results.sources['enhanced-google-places'] = (results.sources['enhanced-google-places'] || 0) + venues.length;
+
+          for (const item of venues) {
+            const lead = normalizeToLead(item, { id: 'enhanced-google-places', defaultCategory: item.category || 'Outsourcer Venue' });
+            lead.county = county;
+            lead.outsource_indicator = item.outsource_indicator;
+            const score = this.leadScorer.calculateScore(lead);
+            lead.advanced_score = score.total;
+            lead.score_grade = score.grade;
+            if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+          }
+        }
+
+        // Instagram enhanced — venue profiles (not bars)
+        if (serperKey) {
+          this.onProgress?.({ message: `Instagram venues: ${county}...`, found: results.found });
+          const igResults = await instagramEnhancedAdapter.searchVenueProfiles(county, serperKey);
+          results.sources['instagram-enhanced'] = (results.sources['instagram-enhanced'] || 0) + igResults.length;
+
+          for (const item of igResults) {
+            const lead = normalizeToLead(item, { id: 'instagram-enhanced', defaultCategory: item.category || 'Instagram Venue' });
+            lead.county = county;
+            lead.instagram_url = item.instagram_url;
+            if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+          }
+        }
+      }
+    } finally {
+      this.isRunning = false;
+      this.state.lastRun = new Date().toISOString();
+      this.saveState();
+    }
+
+    return results;
+  }
+
+  // ── Verify emails for existing leads ──
+  async verifyEmails(leads) {
+    const apiKeys = this.state.apiKeys;
+    return emailVerifier.verifyLeads(leads, apiKeys);
+  }
+
+  // ── Apollo enrichment for a batch of leads ──
+  async enrichWithApollo(leads) {
+    const results = { enriched: 0, errors: 0 };
+    const apiKey = this.state.apiKeys.apollo;
+    if (!apiKey) return results;
+
+    for (const lead of leads) {
+      if (this.abortController?.signal.aborted) break;
+      if (!lead.website) continue;
+
+      this.onProgress?.({ message: `Apollo enriching: ${lead.venue_name}...`, enriched: results.enriched });
+
+      try {
+        const domain = lead.website.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+        const data = await apolloAdapter.enrichCompany(domain, apiKey);
+        if (data.organization) {
+          lead.company_size = data.organization.estimated_num_employees;
+          lead.company_industry = data.organization.industry;
+          lead.company_revenue = data.organization.annual_revenue_printed;
+          lead.company_linkedin = data.organization.linkedin_url;
+          lead.company_technologies = (data.organization.current_technologies || []).slice(0, 5);
+          results.enriched++;
+          this.onLeadFound?.(lead);
+        }
+      } catch {
+        results.errors++;
+      }
+    }
+
+    return results;
+  }
+
   // ── Get adapter info for UI ──
   getAdapterInfo() {
     return Object.values(this.adapters).map(a => ({
@@ -1407,12 +2267,25 @@ class ScraperEngine {
   isAdapterConfigured(adapterId) {
     const keys = this.state.apiKeys;
     switch (adapterId) {
-      case 'jina-reader': return true; // No key needed
+      case 'jina-reader': return true;
       case 'companies-house': return !!keys.companiesHouse;
       case 'google-places': return !!keys.googlePlaces;
+      case 'enhanced-google-places': return !!keys.googlePlaces;
+      case 'google-reviews': return !!keys.googlePlaces;
       case 'serper': return !!keys.serper;
-      case 'instagram': return !!keys.serper; // Uses Serper
+      case 'instagram': return !!keys.serper;
+      case 'instagram-enhanced': return !!keys.serper;
+      case 'eventbrite': return !!keys.serper;
+      case 'review-platforms': return !!keys.serper;
+      case 'facebook': return !!keys.serper;
+      case 'twitter': return !!keys.serper;
+      case 'venue-directories': return !!keys.serper;
+      case 'concierge-market': return !!keys.serper;
       case 'hunter': return !!keys.hunter;
+      case 'apollo': return !!keys.apollo;
+      case 'linkedin': return !!keys.proxycurl;
+      case 'email-verifier': return !!keys.hunter || !!keys.zeroBounce;
+      case 'outscraper': return !!keys.outscraper;
       default: return false;
     }
   }
@@ -1437,6 +2310,13 @@ export {
   twitterAdapter,
   venueDirectoryAdapter,
   advancedLeadScorer,
+  apolloAdapter,
+  linkedinAdapter,
+  enhancedGooglePlacesAdapter,
+  conciergeMarketAdapter,
+  emailVerifier,
+  outscraperAdapter,
+  instagramEnhancedAdapter,
   normalizeToLead,
   RateLimiter,
 };
