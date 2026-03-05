@@ -1416,7 +1416,252 @@ const outscraperAdapter = {
   },
 };
 
-// ── 20. Instagram Hashtag & Content Monitoring ──
+// ── 20. Luxury Retail & Flagship Store Events ──
+// Target: high-end retail stores that host in-store events (cocktail tastings, VIP evenings,
+// product launches, trunk shows). These stores outsource bar/cocktail service.
+// Pattern: Chanel hosting cocktail tastings, Harrods VIP events, Bond Street store openings.
+const luxuryRetailAdapter = {
+  id: 'luxury-retail',
+  name: 'Luxury Retail & Flagship Stores',
+  description: 'High-end retail stores hosting in-store events — cocktail tastings, VIP evenings, product launches, trunk shows',
+  freeLimit: 'Uses Serper credits',
+  technique: 'Multi-site Google Search targeting luxury retail event coordinators + in-store event signals',
+  rateLimit: new RateLimiter(8),
+
+  // Major luxury brands / retailers known to host in-store events in the UK
+  brands: {
+    fashionHouses: [
+      'Chanel', 'Dior', 'Louis Vuitton', 'Gucci', 'Prada', 'Hermès', 'Burberry',
+      'Valentino', 'Balenciaga', 'Saint Laurent', 'Bottega Veneta', 'Fendi',
+      'Alexander McQueen', 'Stella McCartney', 'Vivienne Westwood', 'Mulberry',
+      'Jimmy Choo', 'Manolo Blahnik', 'Christian Louboutin',
+    ],
+    departmentStores: [
+      'Harrods', 'Selfridges', 'Harvey Nichols', 'Liberty London', 'Fortnum & Mason',
+      'Fenwick', 'John Lewis', 'Flannels', 'Browns',
+    ],
+    jewelleryWatches: [
+      'Tiffany & Co', 'Cartier', 'Bulgari', 'Van Cleef & Arpels', 'Graff',
+      'Harry Winston', 'Boodles', 'Asprey', 'Garrard', 'De Beers',
+      'Rolex', 'Omega', 'Patek Philippe', 'Audemars Piguet', 'Breitling',
+    ],
+    carsLifestyle: [
+      'Ferrari', 'Lamborghini', 'Aston Martin', 'Bentley', 'McLaren', 'Rolls-Royce',
+      'Porsche', 'Maserati', 'Range Rover',
+      'Bang & Olufsen', 'Sonos', 'Dyson',
+    ],
+    beautyFragrance: [
+      'Jo Malone', 'Tom Ford Beauty', 'Charlotte Tilbury', 'Space NK',
+      'Penhaligons', 'Creed', 'Le Labo', 'Diptyque', 'Aesop',
+    ],
+    luxuryRetailDistricts: [
+      'Bond Street', 'Sloane Street', 'Mount Street', 'Kings Road Chelsea',
+      'Mayfair', 'Knightsbridge', 'Covent Garden luxury', 'Regent Street luxury',
+      'Bicester Village', 'Royal Exchange', 'Burlington Arcade',
+    ],
+  },
+
+  // Event types these stores host
+  eventTypes: [
+    'cocktail tasting', 'cocktail evening', 'cocktail reception',
+    'VIP event', 'VIP evening', 'VIP shopping event', 'private shopping',
+    'product launch', 'collection launch', 'store opening', 'grand opening',
+    'trunk show', 'press event', 'press preview',
+    'Christmas event', 'festive cocktails', 'holiday party',
+    'fashion show', 'fashion event', 'runway show',
+    'fragrance launch', 'beauty event', 'masterclass',
+    'art exhibition opening', 'gallery night',
+    'charity event', 'charity gala', 'fundraiser',
+    'client appreciation', 'customer event', 'loyalty event',
+  ],
+
+  // Job titles of people who organise these events at retail stores
+  targetTitles: [
+    'Event Manager', 'Events Manager', 'Event Coordinator', 'Events Coordinator',
+    'Store Manager', 'Boutique Manager', 'Boutique Director',
+    'Visual Merchandiser', 'Brand Experience Manager',
+    'Client Relations Manager', 'CRM Manager', 'VIP Client Manager',
+    'Marketing Manager', 'PR Manager', 'Communications Manager',
+    'Regional Manager', 'Area Manager', 'Retail Director',
+    'Head of Events', 'Head of Retail', 'Head of Brand Experience',
+    'Private Client Director', 'Clienteling Manager',
+  ],
+
+  // Search for in-store events at luxury brands
+  async searchBrandEvents(brandCategory, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+    const brands = this.brands[brandCategory] || [];
+
+    for (const brand of brands) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `"${brand}" store event cocktail OR tasting OR launch OR VIP UK`,
+            num: 10, gl: 'uk', hl: 'en',
+          }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          results.push({
+            name: brand,
+            description: item.snippet || '',
+            link: item.link,
+            category: `Luxury Retail (${brandCategory})`,
+            brand,
+            brand_category: brandCategory,
+            market_tier: 'luxury',
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  // Search for event coordinators at luxury stores via LinkedIn mentions on Google
+  async searchEventContacts(serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    const queries = [
+      'site:linkedin.com "event manager" luxury retail London',
+      'site:linkedin.com "events coordinator" Harrods OR Selfridges OR "Harvey Nichols"',
+      'site:linkedin.com "brand experience" Chanel OR Dior OR Gucci OR Burberry London',
+      'site:linkedin.com "store manager" "Bond Street" OR "Sloane Street" OR Knightsbridge',
+      'site:linkedin.com "VIP client manager" luxury retail UK',
+      'site:linkedin.com "client relations" luxury fashion London',
+      'site:linkedin.com "head of events" retail OR store OR boutique UK',
+    ];
+
+    for (const query of queries) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: query, num: 10, gl: 'uk' }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          const nameMatch = item.title?.match(/^([^-|–]+)/);
+          const name = nameMatch?.[1]?.replace(/\s*LinkedIn$/, '')?.trim() || '';
+          if (!name || name.length > 60) continue;
+
+          results.push({
+            name,
+            description: item.snippet || '',
+            link: item.link,
+            linkedin_url: item.link?.includes('linkedin.com') ? item.link : '',
+            category: 'Luxury Retail Contact',
+            market_tier: 'luxury',
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  // Search luxury retail districts for stores hosting events
+  async searchRetailDistricts(serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    for (const district of this.brands.luxuryRetailDistricts) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `"${district}" store event cocktail OR reception OR launch 2024 OR 2025 OR 2026`,
+            num: 10, gl: 'uk', hl: 'en',
+          }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          results.push({
+            name: item.title?.replace(/\s*[-|].*$/, '').trim() || '',
+            description: item.snippet || '',
+            link: item.link,
+            county: 'London',
+            category: `Luxury Retail District (${district})`,
+            market_tier: 'luxury',
+            retail_district: district,
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  // Search Instagram for luxury store events
+  async searchInstagramStoreEvents(serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    const hashtags = [
+      '#harrods event', '#selfridges event', '#bondstreet event',
+      '#luxuryretail event cocktail', '#storeopening cocktail London',
+      '#vipshopping London', '#trunkshow London', '#productlaunch cocktail',
+      '#instore event London', '#luxuryevent retail',
+    ];
+
+    for (const tag of hashtags) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `site:instagram.com ${tag}`,
+            num: 5, gl: 'uk', tbs: 'qdr:m',
+          }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          results.push({
+            name: item.title?.replace(/ on Instagram.*$/, '').replace(/@\w+/, '').trim() || '',
+            description: item.snippet || '',
+            link: item.link,
+            instagram_url: item.link,
+            category: 'Luxury Retail Instagram',
+            market_tier: 'luxury',
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  // Apollo people search: find event coordinators at luxury brands
+  async searchApolloContacts(apolloKey) {
+    if (!apolloKey) return [];
+    const allBrands = [
+      ...this.brands.fashionHouses,
+      ...this.brands.departmentStores,
+      ...this.brands.jewelleryWatches,
+    ];
+
+    return apolloAdapter.searchPeople({
+      titles: this.targetTitles,
+      organizations: allBrands.slice(0, 25), // API limit
+      locations: ['United Kingdom'],
+    }, apolloKey);
+  },
+};
+
+// ── 21. Instagram Hashtag & Content Monitoring ──
 // Enhanced Instagram: hashtag monitoring, event detection, highlight reel analysis
 const instagramEnhancedAdapter = {
   id: 'instagram-enhanced',
@@ -1543,7 +1788,7 @@ const advancedLeadScorer = {
   fitScore(lead) {
     let score = 0;
     // Category fit — prioritize venues that outsource bar services
-    const topFitCategories = ['country house', 'manor', 'castle', 'estate', 'stately home', 'dry hire', 'blank canvas', 'marquee', 'barn venue'];
+    const topFitCategories = ['country house', 'manor', 'castle', 'estate', 'stately home', 'dry hire', 'blank canvas', 'marquee', 'barn venue', 'luxury retail', 'flagship store', 'department store'];
     const highFitCategories = ['wedding venue', 'event venue', 'hotel', 'private hire', 'luxury venue', 'conference', 'gallery', 'museum', 'members club', 'yacht club', 'polo club', 'golf club', 'racecourse'];
     const medFitCategories = ['restaurant', 'corporate venue', 'function room', 'banqueting', 'concierge'];
     const negativeFit = ['bar', 'pub', 'nightclub', 'brewery', 'taproom', 'cocktail bar', 'wine bar'];
@@ -1669,6 +1914,7 @@ class ScraperEngine {
       'email-verifier': emailVerifier,
       'outscraper': outscraperAdapter,
       'instagram-enhanced': instagramEnhancedAdapter,
+      'luxury-retail': luxuryRetailAdapter,
     };
     this.leadScorer = advancedLeadScorer;
 
@@ -1999,7 +2245,7 @@ class ScraperEngine {
     const keys = this.state.apiKeys;
     if (keys.companiesHouse) available.push('companies-house');
     if (keys.googlePlaces) available.push('google-places', 'google-reviews', 'enhanced-google-places');
-    if (keys.serper) available.push('serper', 'instagram', 'instagram-enhanced', 'eventbrite', 'review-platforms', 'facebook', 'twitter', 'venue-directories', 'concierge-market');
+    if (keys.serper) available.push('serper', 'instagram', 'instagram-enhanced', 'eventbrite', 'review-platforms', 'facebook', 'twitter', 'venue-directories', 'concierge-market', 'luxury-retail');
     if (keys.hunter) available.push('hunter');
     if (keys.apollo) available.push('apollo');
     if (keys.proxycurl) available.push('linkedin');
@@ -2214,6 +2460,104 @@ class ScraperEngine {
     return results;
   }
 
+  // ── Run luxury retail store events scan ──
+  async runLuxuryRetailScan(options = {}) {
+    if (this.isRunning) throw new Error('Scan already running');
+    this.isRunning = true;
+    this.abortController = new AbortController();
+
+    const serperKey = this.state.apiKeys.serper;
+    const apolloKey = this.state.apiKeys.apollo;
+    const categories = options.categories || ['fashionHouses', 'departmentStores', 'jewelleryWatches', 'carsLifestyle', 'beautyFragrance'];
+    const results = { found: 0, sources: {} };
+
+    try {
+      // Phase 1: Search brand events by category
+      for (const category of categories) {
+        if (this.abortController.signal.aborted) break;
+        this.onProgress?.({ message: `Luxury retail: scanning ${category}...`, found: results.found });
+
+        const brandResults = await luxuryRetailAdapter.searchBrandEvents(category, serperKey);
+        results.sources[`retail-${category}`] = brandResults.length;
+
+        for (const item of brandResults) {
+          const lead = normalizeToLead(item, { id: 'luxury-retail', defaultCategory: item.category || 'Luxury Retail' });
+          lead.market_tier = 'luxury';
+          lead.brand = item.brand;
+          lead.brand_category = item.brand_category;
+          const score = this.leadScorer.calculateScore(lead);
+          lead.advanced_score = score.total;
+          lead.score_grade = score.grade;
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+      }
+
+      // Phase 2: Search retail districts (Bond Street, Sloane Street, etc.)
+      if (!this.abortController.signal.aborted) {
+        this.onProgress?.({ message: 'Luxury retail: scanning retail districts...', found: results.found });
+        const districtResults = await luxuryRetailAdapter.searchRetailDistricts(serperKey);
+        results.sources['retail-districts'] = districtResults.length;
+
+        for (const item of districtResults) {
+          const lead = normalizeToLead(item, { id: 'luxury-retail', defaultCategory: item.category || 'Luxury District' });
+          lead.market_tier = 'luxury';
+          lead.retail_district = item.retail_district;
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+      }
+
+      // Phase 3: Search for event coordinator contacts at stores
+      if (!this.abortController.signal.aborted) {
+        this.onProgress?.({ message: 'Luxury retail: finding event contacts via LinkedIn...', found: results.found });
+        const contacts = await luxuryRetailAdapter.searchEventContacts(serperKey);
+        results.sources['retail-contacts'] = contacts.length;
+
+        for (const item of contacts) {
+          const lead = normalizeToLead(item, { id: 'luxury-retail', defaultCategory: 'Luxury Retail Contact' });
+          lead.market_tier = 'luxury';
+          lead.linkedin_url = item.linkedin_url;
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+      }
+
+      // Phase 4: Instagram store events
+      if (!this.abortController.signal.aborted) {
+        this.onProgress?.({ message: 'Luxury retail: scanning Instagram store events...', found: results.found });
+        const igResults = await luxuryRetailAdapter.searchInstagramStoreEvents(serperKey);
+        results.sources['retail-instagram'] = igResults.length;
+
+        for (const item of igResults) {
+          const lead = normalizeToLead(item, { id: 'luxury-retail', defaultCategory: 'Luxury Retail Instagram' });
+          lead.market_tier = 'luxury';
+          lead.instagram_url = item.instagram_url;
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+      }
+
+      // Phase 5: Apollo contacts (if key available)
+      if (!this.abortController.signal.aborted && apolloKey) {
+        this.onProgress?.({ message: 'Luxury retail: Apollo people search for event coordinators...', found: results.found });
+        const apolloResults = await luxuryRetailAdapter.searchApolloContacts(apolloKey);
+        results.sources['retail-apollo'] = apolloResults.length;
+
+        for (const item of apolloResults) {
+          const lead = normalizeToLead(item, { id: 'luxury-retail', defaultCategory: 'Luxury Retail Contact (Apollo)' });
+          lead.market_tier = 'luxury';
+          lead.linkedin_url = item.linkedin;
+          lead.contact_email = item.email;
+          lead.phone = item.phone;
+          if (this.saveScrapedLead(lead)) { results.found++; this.onLeadFound?.(lead); }
+        }
+      }
+    } finally {
+      this.isRunning = false;
+      this.state.lastRun = new Date().toISOString();
+      this.saveState();
+    }
+
+    return results;
+  }
+
   // ── Verify emails for existing leads ──
   async verifyEmails(leads) {
     const apiKeys = this.state.apiKeys;
@@ -2281,6 +2625,7 @@ class ScraperEngine {
       case 'twitter': return !!keys.serper;
       case 'venue-directories': return !!keys.serper;
       case 'concierge-market': return !!keys.serper;
+      case 'luxury-retail': return !!keys.serper;
       case 'hunter': return !!keys.hunter;
       case 'apollo': return !!keys.apollo;
       case 'linkedin': return !!keys.proxycurl;
@@ -2317,6 +2662,7 @@ export {
   emailVerifier,
   outscraperAdapter,
   instagramEnhancedAdapter,
+  luxuryRetailAdapter,
   normalizeToLead,
   RateLimiter,
 };

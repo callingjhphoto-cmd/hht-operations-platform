@@ -42,7 +42,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
   const [schedule, setSchedule] = useState(() => scraperEngine.state.schedule || {});
   const [selectedCounties, setSelectedCounties] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
-  const [scanType, setScanType] = useState("full"); // full | instagram | enrich | extended | reviews | concierge | outsourcer | verify | apollo
+  const [scanType, setScanType] = useState("full"); // full | instagram | enrich | extended | reviews | concierge | outsourcer | verify | apollo | luxury-retail
   const logRef = useRef([]);
   const [logLines, setLogLines] = useState([]);
 
@@ -107,6 +107,8 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
         results = await scraperEngine.verifyEmails(leads || []);
       } else if (scanType === "apollo") {
         results = await scraperEngine.enrichWithApollo(leads || []);
+      } else if (scanType === "luxury-retail") {
+        results = await scraperEngine.runLuxuryRetailScan();
       } else {
         results = await scraperEngine.runFullScan({
           counties: selectedCounties.length > 0 ? selectedCounties : undefined,
@@ -312,6 +314,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                 { id: "reviews", label: "Review Mining", desc: "Enrich leads with Google Reviews data and event intent signals" },
                 { id: "concierge", label: "Concierge & Luxury", desc: "Private members clubs, yacht clubs, luxury concierge, HNWI event planners, estate managers" },
                 { id: "outsourcer", label: "Outsourcer Venues", desc: "Dry hire, blank canvas & country house venues that hire outside bar providers" },
+                { id: "luxury-retail", label: "Luxury Retail Stores", desc: "Chanel, Harrods, Bond Street — stores hosting cocktail tastings, VIP events, product launches" },
                 { id: "enrich", label: "Website Enrichment", desc: "Scrape existing lead websites for contact details using Jina AI" },
                 { id: "apollo", label: "Apollo Enrichment", desc: "Enrich leads with firmographics — company size, industry, revenue, key personnel" },
                 { id: "verify", label: "Email Verification", desc: "Waterfall verify emails via Hunter + ZeroBounce with demographic enrichment" },
@@ -333,7 +336,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
           </div>
 
           {/* County Filter */}
-          {!["enrich", "reviews", "verify", "apollo"].includes(scanType) && (
+          {!["enrich", "reviews", "verify", "apollo", "luxury-retail"].includes(scanType) && (
             <div style={cardStyle({ marginBottom: 16 })}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, fontFamily: F.serif }}>
@@ -656,6 +659,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                 { name: "Email Waterfall", tech: "Hunter + ZeroBounce Cascade", desc: "Multi-step verification: syntax check → Hunter validation → ZeroBounce with demographic enrichment (name, gender, location)." },
                 { name: "Outscraper", tech: "Google Maps Popular Times", desc: "Identifies high-traffic venues with consistent weekend/evening peaks — strong indicators of regular event hosting." },
                 { name: "Instagram Enhanced", tech: "Hashtag + Venue Profile Mining", desc: "Monitors event hashtags (#corporateevent, #luxurywedding, #polopony). Finds venue Instagram profiles. Excludes bars/pubs." },
+                { name: "Luxury Retail", tech: "Brand Events + Contact Discovery", desc: "Scans 70+ luxury brands (Chanel, Harrods, Cartier, Ferrari) for in-store events. Finds event coordinators via LinkedIn. Covers Bond Street, Sloane Street, Knightsbridge." },
               ].map(item => (
                 <div key={item.name} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   <div style={{ width: 140, flexShrink: 0 }}>
