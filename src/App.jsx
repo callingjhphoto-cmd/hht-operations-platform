@@ -12,6 +12,13 @@ import Library from "./components/Library";
 import EmailHub from "./components/EmailHub";
 import TeamChat from "./components/TeamChat";
 import ChatWidget from "./components/ChatWidget";
+import CalendarView from "./components/CalendarView";
+import NotificationCentre from "./components/NotificationCentre";
+import TaskManager from "./components/TaskManager";
+import FinancialDashboard from "./components/FinancialDashboard";
+import ClientCRM from "./components/ClientCRM";
+import DocumentTemplates from "./components/DocumentTemplates";
+import AuditLog from "./components/AuditLog";
 import { initializeStore } from "./lib/store";
 import { RAW_LEADS } from "./lib/seedData";
 
@@ -804,31 +811,40 @@ const AIAssistant = () => {
 const NAV_SECTIONS = [
   { label: "Overview", items: [
     { id: "command", label: "Command Centre", icon: "◎" },
+    { id: "notifications", label: "Notifications", icon: "◈" },
+    { id: "calendar", label: "Calendar", icon: "◫" },
     { id: "ai", label: "AI Assistant", icon: "◇" },
   ]},
   { label: "Sales & Leads", items: [
     { id: "leads", label: "Lead Engine", icon: "◉" },
-    { id: "clients", label: "Client Portal", icon: "◑" },
+    { id: "crm", label: "Client CRM", icon: "◑" },
+    { id: "clients", label: "Client Portal", icon: "◐" },
     { id: "quotes", label: "Quotes & Proposals", icon: "◫" },
   ]},
   { label: "Operations", items: [
     { id: "events", label: "Event Manager", icon: "▤" },
     { id: "pipeline", label: "Event Pipeline", icon: "▥" },
+    { id: "tasks", label: "Tasks", icon: "▣" },
     { id: "staff", label: "Staff & Scheduling", icon: "◔" },
     { id: "inventory", label: "Inventory & Stock", icon: "▦" },
   ]},
   { label: "Finance", items: [
     { id: "invoices", label: "Invoicing", icon: "◈" },
     { id: "finance", label: "Financial Hub", icon: "◇" },
+    { id: "dashboard", label: "Financial Dashboard", icon: "▥" },
     { id: "time", label: "Time & Utilisation", icon: "◐" },
   ]},
   { label: "Library & Files", items: [
     { id: "library", label: "Library", icon: "◩" },
     { id: "documents", label: "Documents", icon: "▧" },
+    { id: "templates", label: "Templates", icon: "▤" },
   ]},
   { label: "Communication", items: [
     { id: "email", label: "Email", icon: "◈" },
     { id: "chat", label: "Team Chat", icon: "◬" },
+  ]},
+  { label: "System", items: [
+    { id: "audit", label: "Audit Log", icon: "▦" },
   ]},
 ];
 
@@ -847,6 +863,8 @@ export default function App() {
     invoices: InvoiceManager, staff: StaffManager, inventory: InventoryManager,
     clients: ClientPortal, documents: DocumentManager,
     library: Library, email: EmailHub, chat: TeamChat,
+    calendar: CalendarView, notifications: NotificationCentre, tasks: TaskManager,
+    dashboard: FinancialDashboard, crm: ClientCRM, templates: DocumentTemplates, audit: AuditLog,
   };
   const Page = pages[page] || CommandCentre;
 

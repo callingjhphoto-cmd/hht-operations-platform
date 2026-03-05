@@ -42,7 +42,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
   const [schedule, setSchedule] = useState(() => scraperEngine.state.schedule || {});
   const [selectedCounties, setSelectedCounties] = useState([]);
   const [selectedSources, setSelectedSources] = useState([]);
-  const [scanType, setScanType] = useState("full"); // full | instagram | enrich
+  const [scanType, setScanType] = useState("full"); // full | instagram | enrich | extended | reviews
   const logRef = useRef([]);
   const [logLines, setLogLines] = useState([]);
 
@@ -88,6 +88,13 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
         });
       } else if (scanType === "enrich") {
         results = await scraperEngine.enrichLeadsWithJina(leads || []);
+      } else if (scanType === "extended") {
+        results = await scraperEngine.runExtendedScan({
+          counties: selectedCounties.length > 0 ? selectedCounties : undefined,
+          sources: selectedSources.length > 0 ? selectedSources : undefined,
+        });
+      } else if (scanType === "reviews") {
+        results = await scraperEngine.enrichWithReviews(leads || []);
       } else {
         results = await scraperEngine.runFullScan({
           counties: selectedCounties.length > 0 ? selectedCounties : undefined,
@@ -153,7 +160,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
             <h2 style={{ fontSize: 22, fontWeight: 800, color: C.ink, margin: 0, fontFamily: F.serif }}>Scraper Engine</h2>
           </div>
           <p style={{ color: C.inkMuted, fontSize: 13, margin: "4px 0 0" }}>
-            Multi-source lead discovery using Jina AI, Google Places, Companies House, Instagram & more
+            Multi-source lead discovery — Google, Instagram, Eventbrite, TripAdvisor, Facebook, Twitter, venue directories & more
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -284,7 +291,9 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {[
                 { id: "full", label: "Full Multi-Source Scan", desc: "All configured sources across all counties" },
+                { id: "extended", label: "Extended Discovery", desc: "Eventbrite, TripAdvisor, Facebook, Twitter, venue directories & more" },
                 { id: "instagram", label: "Instagram Discovery", desc: "Find event businesses via Instagram profiles & hashtags" },
+                { id: "reviews", label: "Review Mining", desc: "Enrich leads with Google Reviews data and event intent signals" },
                 { id: "enrich", label: "Website Enrichment", desc: "Scrape existing lead websites for contact details using Jina AI" },
               ].map(st => (
                 <button
@@ -304,7 +313,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
           </div>
 
           {/* County Filter */}
-          {scanType !== "enrich" && (
+          {scanType !== "enrich" && scanType !== "reviews" && (
             <div style={cardStyle({ marginBottom: 16 })}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, fontFamily: F.serif }}>
@@ -339,7 +348,7 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
           )}
 
           {/* Source Filter (full scan only) */}
-          {scanType === "full" && (
+          {(scanType === "full" || scanType === "extended") && (
             <div style={cardStyle({ marginBottom: 16 })}>
               <div style={{ fontSize: 14, fontWeight: 700, fontFamily: F.serif, marginBottom: 8 }}>
                 Sources ({selectedSources.length === 0 ? 'All available' : selectedSources.length} selected)
@@ -474,6 +483,16 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                     Import All to Pipeline
                   </button>
                   <button onClick={() => {
+                    const scored = scrapedLeads.map(lead => ({
+                      ...lead,
+                      leadScore: scraperEngine.scoreLeadAdvanced(lead).totalScore,
+                    }));
+                    setScrapedLeads(scored);
+                    addLog(`SCORED ${scored.length} leads with advanced model`);
+                  }} style={btnStyle("outline")}>
+                    Score All Leads
+                  </button>
+                  <button onClick={() => {
                     localStorage.removeItem('hht_scraped_leads');
                     setScrapedLeads([]);
                     addLog("CLEARED scraped leads");
@@ -517,6 +536,14 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                         <span style={{ fontSize: 11, color: C.success }}>{lead.phone}</span>
                       )}
                       <span style={pillStyle(C.accentSubtle, C.accent)}>{lead.source || 'manual'}</span>
+                      {lead.leadScore && (
+                        <span style={pillStyle(
+                          lead.leadScore >= 70 ? C.successBg : lead.leadScore >= 40 ? C.warnBg : C.dangerBg,
+                          lead.leadScore >= 70 ? C.success : lead.leadScore >= 40 ? C.warn : C.danger,
+                        )}>
+                          Score: {lead.leadScore}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {lead.trigger_event && (
@@ -595,6 +622,13 @@ export default function ScraperPanel({ leads, onAddLeads, onBack }) {
                 { name: "Serper.dev", tech: "Google SERP Structured Extraction", desc: "Extracts Google Search results as structured JSON. Returns organic results + local business listings with full contact details. Includes Knowledge Graph data." },
                 { name: "Instagram Discovery", tech: "Google site: Search + Profile Scraping", desc: "Uses Google to find Instagram business profiles, then Jina Reader to extract bio, website, email, and follower count from public profiles." },
                 { name: "Hunter.io", tech: "Domain Email Pattern Detection", desc: "Crawls public sources to find email addresses associated with a domain. Detects patterns (e.g. first.last@company.co.uk) and returns emails with confidence scores." },
+                { name: "Google Reviews", tech: "Places API Place Details", desc: "Mines Google Reviews for event-related keywords (wedding, corporate, party). Identifies venues actively hosting events through review content analysis." },
+                { name: "Eventbrite", tech: "Serper site:eventbrite.co.uk", desc: "Discovers event organisers via Eventbrite listings. Extracts organiser names, event types, and contact information from public event pages." },
+                { name: "Review Platforms", tech: "Serper site:tripadvisor + yelp", desc: "Finds venue businesses on TripAdvisor and Yelp. Extracts ratings, review counts, and event-related mentions from venue listings." },
+                { name: "Facebook Pages", tech: "Serper site:facebook.com", desc: "Discovers business Facebook pages and events. Extracts page details, follower counts, and event hosting patterns." },
+                { name: "Twitter/X Intel", tech: "Serper site:twitter.com", desc: "Monitors Twitter/X for event intent signals — hiring event staff, seeking venues, planning corporate events. Real-time lead discovery." },
+                { name: "Venue Directories", tech: "Multi-directory Aggregator", desc: "Searches Hire Space, Square Meal, VenueScanner, Tagvenue, HeadBox, DesignMyNight, Bridebook, and Hitched simultaneously." },
+                { name: "Advanced Scoring", tech: "Apollo/ZoomInfo-style Model", desc: "Multi-signal lead scoring: Fit (40%) based on business type & size, Intent (35%) from review keywords & social activity, Completeness (25%) from data quality." },
               ].map(item => (
                 <div key={item.name} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   <div style={{ width: 140, flexShrink: 0 }}>

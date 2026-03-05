@@ -454,6 +454,485 @@ const hunterAdapter = {
   },
 };
 
+// ── 7. Google Business Reviews Enrichment ──
+// Technique: Uses Google Places API Place Details to pull reviews, Q&A, photos
+// Pattern from ZoomInfo/Apollo: enrich existing leads with intent signals from reviews
+const googleReviewsAdapter = {
+  id: 'google-reviews',
+  name: 'Google Reviews Enrichment',
+  description: 'Enrich leads with Google reviews, rating trends, and event mentions. Uses Places API.',
+  freeLimit: 'Shares Google Places quota (10,000/month)',
+  technique: 'Places API → Place Details → Review text mining for event signals',
+  rateLimit: new RateLimiter(30),
+
+  // Search terms that indicate event-hosting potential in reviews
+  eventSignals: [
+    'event', 'wedding', 'party', 'private hire', 'corporate', 'function',
+    'cocktail', 'birthday', 'celebration', 'reception', 'launch', 'bar',
+    'catering', 'hosted', 'booked', 'venue hire', 'exclusive hire',
+  ],
+
+  async getPlaceDetails(placeId, apiKey) {
+    if (!apiKey || !placeId) return null;
+    await this.rateLimit.throttle();
+
+    const fields = 'displayName,formattedAddress,websiteUri,nationalPhoneNumber,rating,userRatingCount,reviews,regularOpeningHours,photos,editorialSummary,priceLevel,types';
+    const response = await retryFetch(
+      `https://places.googleapis.com/v1/places/${placeId}?fields=${fields}`,
+      { headers: { 'X-Goog-Api-Key': apiKey, 'Content-Type': 'application/json' } },
+    );
+    return await response.json();
+  },
+
+  // Analyze reviews for event-related signals
+  analyzeReviews(reviews) {
+    if (!reviews || !reviews.length) return { eventScore: 0, eventMentions: 0, recentPositive: 0, signals: [] };
+
+    let eventMentions = 0;
+    let recentPositive = 0;
+    const signals = new Set();
+    const sixMonthsAgo = new Date(Date.now() - 180 * 86400000).toISOString();
+
+    for (const review of reviews) {
+      const text = (review.text?.text || review.originalText?.text || '').toLowerCase();
+      const isRecent = (review.publishTime || '') > sixMonthsAgo;
+
+      for (const signal of this.eventSignals) {
+        if (text.includes(signal)) {
+          eventMentions++;
+          signals.add(signal);
+          break;
+        }
+      }
+
+      if (isRecent && (review.rating >= 4)) recentPositive++;
+    }
+
+    const eventScore = Math.min(100, Math.round(
+      (eventMentions / reviews.length) * 40 +
+      (recentPositive / reviews.length) * 30 +
+      Math.min(reviews.length / 50, 1) * 30
+    ));
+
+    return { eventScore, eventMentions, recentPositive, signals: [...signals] };
+  },
+
+  // Find competitors near a venue
+  async findNearbyCompetitors(lat, lng, apiKey) {
+    if (!apiKey) return [];
+    await this.rateLimit.throttle();
+
+    const response = await retryFetch('https://places.googleapis.com/v1/places:searchNearby', {
+      method: 'POST',
+      headers: { 'X-Goog-Api-Key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        includedTypes: ['bar', 'restaurant', 'event_venue', 'night_club'],
+        maxResultCount: 10,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 2000 } },
+      }),
+    });
+    const data = await response.json();
+    return (data.places || []).map(p => ({
+      name: p.displayName?.text,
+      rating: p.rating,
+      reviews: p.userRatingCount,
+      types: p.types,
+    }));
+  },
+};
+
+// ── 8. Eventbrite Discovery ──
+// Technique: Uses Serper to find Eventbrite event organizers in target areas
+// Pattern from Apollo: intent-based prospecting — find people actively hosting events
+const eventbriteAdapter = {
+  id: 'eventbrite',
+  name: 'Eventbrite Discovery',
+  description: 'Find event organizers via Eventbrite listings. Discovers venues and planners actively hosting events.',
+  freeLimit: 'Uses Serper quota (2,500/month)',
+  technique: 'Serper Google Search → site:eventbrite.co.uk → organizer extraction',
+  rateLimit: new RateLimiter(15),
+
+  searchQueries: [
+    'site:eventbrite.co.uk cocktail event {county}',
+    'site:eventbrite.co.uk gin tasting {county}',
+    'site:eventbrite.co.uk whisky masterclass {county}',
+    'site:eventbrite.co.uk corporate drinks {county}',
+    'site:eventbrite.co.uk bar experience {county}',
+    'site:eventbrite.co.uk cocktail making {county}',
+    'site:eventbrite.co.uk wine tasting event {county}',
+    'site:eventbrite.co.uk private dining {county}',
+  ],
+
+  async search(county, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    for (const queryTemplate of this.searchQueries.slice(0, 3)) {
+      await this.rateLimit.throttle();
+      const query = queryTemplate.replace('{county}', county);
+
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: query, num: 10, gl: 'uk', hl: 'en' }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          // Extract organizer name from Eventbrite URL/title
+          const orgMatch = item.title?.match(/by\s+(.+?)(?:\s*\||\s*-|\s*$)/i);
+          results.push({
+            name: orgMatch?.[1]?.trim() || item.title?.split('|')[0]?.trim() || '',
+            description: item.snippet || '',
+            link: item.link || '',
+            city: '',
+            county,
+            category: 'Event Organizer (Eventbrite)',
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+};
+
+// ── 9. TripAdvisor & Yelp Discovery ──
+// Technique: Uses Serper to find venue listings on review platforms
+// Pattern from Lusha/ZoomInfo: aggregate data from multiple directories
+const reviewPlatformAdapter = {
+  id: 'review-platforms',
+  name: 'TripAdvisor & Yelp',
+  description: 'Discover venues via TripAdvisor and Yelp listings. Extracts ratings, review counts, and venue details.',
+  freeLimit: 'Uses Serper quota (2,500/month)',
+  technique: 'Serper → site:tripadvisor.co.uk + site:yelp.co.uk → venue extraction',
+  rateLimit: new RateLimiter(15),
+
+  async search(county, venueType, serperKey) {
+    if (!serperKey) return [];
+    await this.rateLimit.throttle();
+
+    const results = [];
+    const queries = [
+      `site:tripadvisor.co.uk "${county}" ${venueType} private hire`,
+      `site:yelp.co.uk "${county}" ${venueType} events`,
+    ];
+
+    for (const query of queries) {
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: query, num: 10, gl: 'uk', hl: 'en' }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          const source = item.link?.includes('tripadvisor') ? 'TripAdvisor' : 'Yelp';
+          // Extract rating from snippet (e.g., "4.5 of 5 bubbles")
+          const ratingMatch = item.snippet?.match(/([\d.]+)\s*(?:of 5|\/5|stars?|bubbles)/i);
+          const reviewMatch = item.snippet?.match(/(\d[\d,]*)\s*reviews?/i);
+
+          results.push({
+            name: item.title?.replace(/\s*[-|].*$/, '').replace(/,.*$/, '').trim() || '',
+            description: item.snippet || '',
+            link: item.link || '',
+            rating: ratingMatch ? parseFloat(ratingMatch[1]) : null,
+            reviewCount: reviewMatch ? parseInt(reviewMatch[1].replace(',', '')) : 0,
+            city: '',
+            county,
+            category: `${venueType} (${source})`,
+            source: source.toLowerCase(),
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+};
+
+// ── 10. Facebook Events & Pages Discovery ──
+// Technique: Uses Serper to find Facebook business pages and events
+// Pattern from HubSpot: social media prospecting via search
+const facebookAdapter = {
+  id: 'facebook',
+  name: 'Facebook Events & Pages',
+  description: 'Find venue Facebook pages and event listings via Google search.',
+  freeLimit: 'Uses Serper quota (2,500/month)',
+  technique: 'Serper → site:facebook.com → page/event extraction',
+  rateLimit: new RateLimiter(15),
+
+  async searchPages(county, serperKey) {
+    if (!serperKey) return [];
+    await this.rateLimit.throttle();
+
+    const queries = [
+      `site:facebook.com "${county}" cocktail bar events`,
+      `site:facebook.com "${county}" event venue hire`,
+      `site:facebook.com "${county}" mobile bar service`,
+    ];
+
+    const results = [];
+    for (const query of queries) {
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: query, num: 10, gl: 'uk', hl: 'en' }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          if (!item.link?.includes('facebook.com')) continue;
+          results.push({
+            name: item.title?.replace(/\s*[-|].*Facebook.*$/i, '').replace(/\s*\|.*$/, '').trim() || '',
+            description: item.snippet || '',
+            facebook_url: item.link,
+            city: '',
+            county,
+            category: 'Facebook Lead',
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+
+  async searchEvents(county, serperKey) {
+    if (!serperKey) return [];
+    await this.rateLimit.throttle();
+
+    try {
+      const response = await retryFetch('https://google.serper.dev/search', {
+        method: 'POST',
+        headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          q: `site:facebook.com/events "${county}" cocktail OR bar OR mixology OR tasting 2025`,
+          num: 10, gl: 'uk', hl: 'en',
+        }),
+      });
+      const data = await response.json();
+
+      return (data.organic || []).map(item => ({
+        name: item.title?.replace(/\s*\|.*$/, '').trim() || '',
+        description: item.snippet || '',
+        facebook_url: item.link,
+        county,
+        category: 'Facebook Event Organizer',
+      }));
+    } catch {
+      return [];
+    }
+  },
+};
+
+// ── 11. Twitter/X Event Monitoring ──
+// Technique: Uses Serper to find X/Twitter posts about events in target areas
+// Pattern from Brandwatch/Mention: social listening for intent signals
+const twitterAdapter = {
+  id: 'twitter',
+  name: 'X/Twitter Monitoring',
+  description: 'Find event-related tweets and venue accounts. Social listening for lead signals.',
+  freeLimit: 'Uses Serper quota (2,500/month)',
+  technique: 'Serper → site:twitter.com/x.com → event intent extraction',
+  rateLimit: new RateLimiter(15),
+
+  intentKeywords: [
+    'looking for cocktail bar', 'need a bartender', 'hiring mobile bar',
+    'cocktail event', 'venue looking for', 'bar service needed',
+    'mixologist wanted', 'event bar service', 'wedding bar',
+  ],
+
+  async searchIntentSignals(county, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    for (const keyword of this.intentKeywords.slice(0, 4)) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `(site:twitter.com OR site:x.com) "${county}" ${keyword}`,
+            num: 5, gl: 'uk', hl: 'en', tbs: 'qdr:m', // Last month only
+          }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          results.push({
+            name: item.title?.split(/[-|@]/)[0]?.trim() || '',
+            description: item.snippet || '',
+            twitter_url: item.link,
+            county,
+            category: 'Twitter Intent Signal',
+            intent_keyword: keyword,
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+};
+
+// ── 12. Venue Directory Aggregator ──
+// Technique: Scrapes major UK venue directory sites via Serper
+// Pattern from Apollo: multi-directory prospecting for comprehensive coverage
+const venueDirectoryAdapter = {
+  id: 'venue-directories',
+  name: 'Venue Directory Aggregator',
+  description: 'Aggregate leads from Hire Space, Square Meal, VenueScanner, Tagvenue, and more.',
+  freeLimit: 'Uses Serper quota (2,500/month)',
+  technique: 'Serper → multiple directory sites → venue extraction + dedup',
+  rateLimit: new RateLimiter(15),
+
+  directories: [
+    { domain: 'hirespace.com', name: 'Hire Space' },
+    { domain: 'squaremeal.co.uk', name: 'Square Meal' },
+    { domain: 'venuescanner.com', name: 'VenueScanner' },
+    { domain: 'tagvenue.com', name: 'Tagvenue' },
+    { domain: 'headbox.com', name: 'HeadBox' },
+    { domain: 'designmynight.com', name: 'DesignMyNight' },
+    { domain: 'bridebook.com', name: 'Bridebook' },
+    { domain: 'hitched.co.uk', name: 'Hitched' },
+  ],
+
+  async search(county, venueType, serperKey) {
+    if (!serperKey) return [];
+    const results = [];
+
+    for (const dir of this.directories) {
+      await this.rateLimit.throttle();
+      try {
+        const response = await retryFetch('https://google.serper.dev/search', {
+          method: 'POST',
+          headers: { 'X-API-KEY': serperKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            q: `site:${dir.domain} "${county}" ${venueType}`,
+            num: 5, gl: 'uk', hl: 'en',
+          }),
+        });
+        const data = await response.json();
+
+        for (const item of (data.organic || [])) {
+          results.push({
+            name: item.title?.replace(/\s*[-|].*$/, '').replace(/,.*$/, '').trim() || '',
+            description: item.snippet || '',
+            link: item.link,
+            county,
+            category: `${venueType} (${dir.name})`,
+            directory_source: dir.name,
+          });
+        }
+      } catch { /* continue */ }
+    }
+
+    return results;
+  },
+};
+
+// ── 13. Advanced Lead Scoring ──
+// Pattern from Apollo.io + ZoomInfo: multi-signal scoring model
+// Combines: data completeness, engagement signals, fit signals, timing signals
+const advancedLeadScorer = {
+  // Fit signals — how well the lead matches ideal customer profile
+  fitScore(lead) {
+    let score = 0;
+    // Category fit
+    const highFitCategories = ['wedding venue', 'event venue', 'hotel', 'cocktail bar', 'private hire', 'luxury venue'];
+    const medFitCategories = ['restaurant', 'bar', 'pub', 'conference venue', 'gallery'];
+    const cat = (lead.category || '').toLowerCase();
+    if (highFitCategories.some(c => cat.includes(c))) score += 25;
+    else if (medFitCategories.some(c => cat.includes(c))) score += 15;
+    else score += 5;
+
+    // Capacity fit
+    if (lead.capacity >= 50 && lead.capacity <= 500) score += 20;
+    else if (lead.capacity > 500) score += 10;
+    else if (lead.capacity > 0) score += 5;
+
+    // Location fit (distance from London)
+    const dist = lead.distance_from_london_miles || 100;
+    if (dist <= 30) score += 15;
+    else if (dist <= 60) score += 10;
+    else if (dist <= 100) score += 5;
+
+    // Premium signals
+    const desc = (lead.trigger_event || lead.description || '').toLowerCase();
+    if (desc.includes('luxury') || desc.includes('premium') || desc.includes('exclusive')) score += 10;
+    if (desc.includes('cocktail') || desc.includes('bar') || desc.includes('mixolog')) score += 10;
+
+    return Math.min(score, 80);
+  },
+
+  // Data completeness — more data = higher quality lead
+  completenessScore(lead) {
+    let score = 0;
+    if (lead.venue_name) score += 5;
+    if (lead.contact_email) score += 15;
+    if (lead.phone) score += 10;
+    if (lead.website) score += 10;
+    if (lead.capacity > 0) score += 5;
+    if (lead.rating > 0) score += 5;
+    if (lead.reviewCount > 10) score += 5;
+    if (lead.trigger_event || lead.description) score += 5;
+    if (lead.instagram_url || lead.facebook_url || lead.twitter_url) score += 5;
+    return Math.min(score, 60);
+  },
+
+  // Engagement/intent signals — signs of buying readiness
+  intentScore(lead) {
+    let score = 0;
+    const desc = (lead.trigger_event || lead.description || '').toLowerCase();
+
+    // Active event hosting signals
+    if (desc.includes('now booking') || desc.includes('enquire')) score += 15;
+    if (desc.includes('new venue') || desc.includes('just opened') || desc.includes('grand opening')) score += 20;
+    if (desc.includes('hiring') || desc.includes('looking for') || desc.includes('seeking')) score += 15;
+    if (desc.includes('expand') || desc.includes('growing') || desc.includes('new')) score += 10;
+
+    // Recency boost
+    if (lead.scraped_at) {
+      const daysAgo = (Date.now() - new Date(lead.scraped_at).getTime()) / 86400000;
+      if (daysAgo <= 7) score += 10;
+      else if (daysAgo <= 30) score += 5;
+    }
+
+    // Rating & review volume (popular = more events)
+    if (lead.rating >= 4.5 && lead.reviewCount >= 50) score += 10;
+    else if (lead.rating >= 4.0 && lead.reviewCount >= 20) score += 5;
+
+    return Math.min(score, 60);
+  },
+
+  // Combined score with weighted components
+  calculateScore(lead) {
+    const fit = this.fitScore(lead);
+    const completeness = this.completenessScore(lead);
+    const intent = this.intentScore(lead);
+
+    // Weighted: Fit 40%, Intent 35%, Completeness 25%
+    const total = Math.round(fit * 0.4 + intent * 0.35 + completeness * 0.25);
+
+    return {
+      total: Math.min(total, 100),
+      fit,
+      completeness,
+      intent,
+      grade: total >= 80 ? 'A' : total >= 60 ? 'B' : total >= 40 ? 'C' : 'D',
+      recommendation: total >= 80 ? 'Hot — prioritize outreach'
+        : total >= 60 ? 'Warm — schedule follow-up'
+        : total >= 40 ? 'Cool — add to nurture sequence'
+        : 'Cold — low priority, enrich first',
+    };
+  },
+};
+
 // ══════════════════════════════════════════════════════════════════════════════
 // SCRAPER ENGINE — Orchestrates all adapters with scheduling & dedup
 // Pattern from Crawlee: RequestQueue + AutoscaledPool
@@ -471,7 +950,14 @@ class ScraperEngine {
       'serper': serperAdapter,
       'instagram': instagramAdapter,
       'hunter': hunterAdapter,
+      'google-reviews': googleReviewsAdapter,
+      'eventbrite': eventbriteAdapter,
+      'review-platforms': reviewPlatformAdapter,
+      'facebook': facebookAdapter,
+      'twitter': twitterAdapter,
+      'venue-directories': venueDirectoryAdapter,
     };
+    this.leadScorer = advancedLeadScorer;
 
     this.state = this.loadState();
     this.isRunning = false;
@@ -799,9 +1285,111 @@ class ScraperEngine {
     const available = ['jina-reader']; // Always available (no key needed)
     const keys = this.state.apiKeys;
     if (keys.companiesHouse) available.push('companies-house');
-    if (keys.googlePlaces) available.push('google-places');
-    if (keys.serper) available.push('serper', 'instagram');
+    if (keys.googlePlaces) available.push('google-places', 'google-reviews');
+    if (keys.serper) available.push('serper', 'instagram', 'eventbrite', 'review-platforms', 'facebook', 'twitter', 'venue-directories');
+    if (keys.hunter) available.push('hunter');
     return available;
+  }
+
+  // ── Score a lead using the advanced scoring model ──
+  scoreLeadAdvanced(lead) {
+    return this.leadScorer.calculateScore(lead);
+  }
+
+  // ── Run Google Reviews enrichment on existing leads ──
+  async enrichWithReviews(leads) {
+    const results = { enriched: 0, errors: 0 };
+    const apiKey = this.state.apiKeys.googlePlaces;
+    if (!apiKey) return results;
+
+    for (const lead of leads) {
+      if (this.abortController?.signal.aborted) break;
+      this.onProgress?.({ message: `Enriching reviews: ${lead.venue_name}...`, enriched: results.enriched });
+
+      try {
+        // Search for the place first
+        const searchResults = await googlePlacesAdapter.textSearch(lead.venue_name, lead.county || 'London', apiKey);
+        if (searchResults.length > 0) {
+          const place = searchResults[0];
+          if (place.id) {
+            const details = await googleReviewsAdapter.getPlaceDetails(place.id, apiKey);
+            if (details) {
+              const analysis = googleReviewsAdapter.analyzeReviews(details.reviews || []);
+              lead.google_event_score = analysis.eventScore;
+              lead.google_event_signals = analysis.signals;
+              lead.google_event_mentions = analysis.eventMentions;
+              lead.rating = details.rating || lead.rating;
+              lead.reviewCount = details.userRatingCount || lead.reviewCount;
+              results.enriched++;
+              this.onLeadFound?.(lead);
+            }
+          }
+        }
+      } catch {
+        results.errors++;
+      }
+    }
+
+    return results;
+  }
+
+  // ── Run multi-source discovery scan (new sources) ──
+  async runExtendedScan(options = {}) {
+    if (this.isRunning) throw new Error('Scan already running');
+    this.isRunning = true;
+    this.abortController = new AbortController();
+
+    const counties = options.counties || ['London', 'Surrey', 'Kent'];
+    const serperKey = this.state.apiKeys.serper;
+    const results = { found: 0, sources: {} };
+
+    const sources = [
+      { id: 'eventbrite', fn: async (county) => eventbriteAdapter.search(county, serperKey) },
+      { id: 'review-platforms', fn: async (county) => reviewPlatformAdapter.search(county, 'cocktail bar', serperKey) },
+      { id: 'facebook', fn: async (county) => facebookAdapter.searchPages(county, serperKey) },
+      { id: 'venue-directories', fn: async (county) => venueDirectoryAdapter.search(county, 'event venue', serperKey) },
+    ];
+
+    try {
+      for (const county of counties) {
+        if (this.abortController.signal.aborted) break;
+
+        for (const source of sources) {
+          if (this.abortController.signal.aborted) break;
+          this.onProgress?.({ message: `[${source.id}] Scanning ${county}...`, found: results.found });
+
+          try {
+            const items = await source.fn(county);
+            results.sources[source.id] = (results.sources[source.id] || 0) + items.length;
+
+            for (const item of items) {
+              const lead = normalizeToLead(item, { id: source.id, defaultCategory: item.category || 'Lead' });
+              lead.county = county;
+              if (item.facebook_url) lead.facebook_url = item.facebook_url;
+              if (item.twitter_url) lead.twitter_url = item.twitter_url;
+              if (item.directory_source) lead.directory_source = item.directory_source;
+
+              // Apply advanced scoring
+              const score = this.leadScorer.calculateScore(lead);
+              lead.advanced_score = score.total;
+              lead.score_grade = score.grade;
+              lead.score_recommendation = score.recommendation;
+
+              if (this.saveScrapedLead(lead)) {
+                results.found++;
+                this.onLeadFound?.(lead);
+              }
+            }
+          } catch { /* continue */ }
+        }
+      }
+    } finally {
+      this.isRunning = false;
+      this.state.lastRun = new Date().toISOString();
+      this.saveState();
+    }
+
+    return results;
   }
 
   // ── Get adapter info for UI ──
@@ -842,6 +1430,13 @@ export {
   serperAdapter,
   instagramAdapter,
   hunterAdapter,
+  googleReviewsAdapter,
+  eventbriteAdapter,
+  reviewPlatformAdapter,
+  facebookAdapter,
+  twitterAdapter,
+  venueDirectoryAdapter,
+  advancedLeadScorer,
   normalizeToLead,
   RateLimiter,
 };
