@@ -11,6 +11,7 @@ import DocumentManager from "./components/DocumentManager";
 import Library from "./components/Library";
 import EmailHub from "./components/EmailHub";
 import TeamChat from "./components/TeamChat";
+import ChatWidget from "./components/ChatWidget";
 import { initializeStore } from "./lib/store";
 import { RAW_LEADS } from "./lib/seedData";
 
@@ -899,6 +900,7 @@ export default function App() {
           <Page />
         </div>
       </main>
+      <ChatWidget />
     </div>
   );
 }

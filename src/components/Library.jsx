@@ -134,6 +134,12 @@ export default function Library() {
   const [driveConnected, setDriveConnected] = useState(false);
   const [driveConfig, setDriveConfig] = useState({ rootFolderId: "", apiKey: "", clientId: "" });
   const [uploadForm, setUploadForm] = useState({ name: "", collection: "recipes", tags: "" });
+  const [showBot, setShowBot] = useState(false);
+  const [botQuery, setBotQuery] = useState("");
+  const [botConversation, setBotConversation] = useState([
+    { role: "bot", text: "Hi! I'm your Library Assistant. Ask me to find any file — invoices, recipes, project packs, brand assets, anything. Try something like:\n\n• \"Find the Diageo event photos\"\n• \"Show me cocktail recipes\"\n• \"Where's the Campari proposal?\"\n• \"Brand guidelines\"" },
+  ]);
+  const botMessagesRef = useRef(null);
 
   // Load persisted data
   useEffect(() => {
@@ -193,6 +199,55 @@ export default function Library() {
     setShowSettings(false);
   }, [driveConfig]);
 
+  // ── Bot search logic ──
+  const botSearch = useCallback((query) => {
+    if (!query.trim()) return;
+    const q = query.toLowerCase();
+    setBotConversation(prev => [...prev, { role: "user", text: query }]);
+    setBotQuery("");
+
+    // Search files by name, tags, collection, creator
+    const matches = files.filter(f => {
+      const name = f.name.toLowerCase();
+      const tags = (f.tags || []).join(" ").toLowerCase();
+      const creator = (f.createdBy || "").toLowerCase();
+      const col = COLLECTIONS.find(c => c.id === f.collection)?.label?.toLowerCase() || "";
+      return name.includes(q) || tags.includes(q) || creator.includes(q) || col.includes(q)
+        || q.split(/\s+/).every(word => (name + " " + tags + " " + col + " " + creator).includes(word));
+    });
+
+    setTimeout(() => {
+      if (matches.length === 0) {
+        // Try fuzzy — match any word
+        const words = q.split(/\s+/).filter(w => w.length > 2);
+        const fuzzyMatches = files.filter(f => {
+          const haystack = (f.name + " " + (f.tags || []).join(" ") + " " + (f.createdBy || "") + " " + (COLLECTIONS.find(c => c.id === f.collection)?.label || "")).toLowerCase();
+          return words.some(word => haystack.includes(word));
+        });
+
+        if (fuzzyMatches.length > 0) {
+          setBotConversation(prev => [...prev, {
+            role: "bot",
+            text: `I didn't find an exact match, but here are ${fuzzyMatches.length} related file${fuzzyMatches.length > 1 ? "s" : ""}:`,
+            results: fuzzyMatches.slice(0, 5),
+          }]);
+        } else {
+          setBotConversation(prev => [...prev, {
+            role: "bot",
+            text: `I couldn't find any files matching "${query}". Try different keywords, or check the collection categories on the left. You can also try:\n\n• Search by file type (e.g. "PDF", "photos")\n• Search by person (e.g. "Joe Stokoe")\n• Search by project (e.g. "Diageo", "Pernod Ricard")`,
+          }]);
+        }
+      } else {
+        setBotConversation(prev => [...prev, {
+          role: "bot",
+          text: `Found ${matches.length} file${matches.length > 1 ? "s" : ""} matching "${query}":`,
+          results: matches.slice(0, 8),
+        }]);
+      }
+      setTimeout(() => botMessagesRef.current?.scrollTo({ top: botMessagesRef.current.scrollHeight, behavior: "smooth" }), 50);
+    }, 400 + Math.random() * 300); // Small delay to feel natural
+  }, [files]);
+
   // ── Filtering & sorting ──
   const filtered = useMemo(() => {
     let result = files;
@@ -238,6 +293,9 @@ export default function Library() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowBot(!showBot)} style={btnStyle(showBot ? "primary" : "outline")}>
+            🤖 Ask Library Bot
+          </button>
           <button onClick={() => setShowSettings(true)} style={btnStyle("outline")}>
             ⚙ Drive Settings
           </button>
@@ -745,6 +803,105 @@ export default function Library() {
           </div>
         </div>
       </div>
+
+      {/* ── Library Search Bot Panel ── */}
+      {showBot && (
+        <div style={{ position: "fixed", bottom: 80, right: 80, width: 420, height: 520, background: C.card, borderRadius: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.15), 0 2px 8px rgba(0,0,0,0.08)", border: `1px solid ${C.border}`, display: "flex", flexDirection: "column", overflow: "hidden", zIndex: 1500 }}>
+          {/* Bot header */}
+          <div style={{ padding: "12px 16px", background: C.ink, color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 18 }}>🤖</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Library Assistant</div>
+                <div style={{ fontSize: 10, opacity: 0.7 }}>Search files by asking in plain English</div>
+              </div>
+            </div>
+            <button onClick={() => setShowBot(false)} style={{ border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", width: 26, height: 26, borderRadius: 6, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          </div>
+
+          {/* Conversation */}
+          <div ref={botMessagesRef} style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+            {botConversation.map((msg, i) => (
+              <div key={i} style={{ marginBottom: 14, display: "flex", flexDirection: msg.role === "user" ? "row-reverse" : "row", gap: 8 }}>
+                {msg.role === "bot" && (
+                  <div style={{ width: 28, height: 28, borderRadius: 8, background: C.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>🤖</div>
+                )}
+                <div style={{ maxWidth: "85%" }}>
+                  <div style={{
+                    fontSize: 13, lineHeight: 1.6, color: C.ink, whiteSpace: "pre-wrap",
+                    background: msg.role === "user" ? C.accentSubtle : C.bgWarm,
+                    padding: "8px 12px", borderRadius: 10,
+                    borderTopLeftRadius: msg.role === "bot" ? 2 : 10,
+                    borderTopRightRadius: msg.role === "user" ? 2 : 10,
+                  }}>
+                    {msg.text}
+                  </div>
+                  {/* File results */}
+                  {msg.results && msg.results.length > 0 && (
+                    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {msg.results.map(file => {
+                        const ext = file.type || getFileExt(file.name);
+                        const icon = FILE_TYPE_ICONS[ext] || FILE_TYPE_ICONS.default;
+                        const colors = FILE_TYPE_COLORS[ext] || FILE_TYPE_COLORS.default;
+                        const col = COLLECTIONS.find(c => c.id === file.collection);
+                        return (
+                          <div
+                            key={file.id}
+                            onClick={() => { setSelectedFile(file); setShowBot(false); }}
+                            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: C.card, border: `1px solid ${C.border}`, borderRadius: 8, cursor: "pointer", transition: "all 0.1s" }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.background = C.accentSubtle; }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.background = C.card; }}
+                          >
+                            <div style={{ width: 30, height: 30, borderRadius: 6, background: colors.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{icon}</div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+                              <div style={{ fontSize: 10, color: C.inkMuted }}>{col?.icon} {col?.label} · {file.createdBy} · {formatBytes(file.size)}</div>
+                            </div>
+                            <span style={{ fontSize: 11, color: C.accent }}>→</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bot input */}
+          <div style={{ padding: "10px 14px", borderTop: `1px solid ${C.borderLight}`, display: "flex", gap: 8, flexShrink: 0 }}>
+            <input
+              type="text"
+              placeholder="Ask me to find a file..."
+              value={botQuery}
+              onChange={e => setBotQuery(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") botSearch(botQuery); }}
+              style={{ ...inputStyle, fontSize: 12 }}
+              autoFocus
+            />
+            <button
+              onClick={() => botSearch(botQuery)}
+              disabled={!botQuery.trim()}
+              style={{ ...btnStyle("accent"), opacity: botQuery.trim() ? 1 : 0.5, flexShrink: 0, padding: "8px 14px" }}
+            >
+              Search
+            </button>
+          </div>
+
+          {/* Quick suggestions */}
+          <div style={{ padding: "6px 14px 10px", display: "flex", gap: 4, flexWrap: "wrap", flexShrink: 0 }}>
+            {["Diageo", "recipes", "brand guidelines", "Pernod Ricard", "menus", "training"].map(suggestion => (
+              <button
+                key={suggestion}
+                onClick={() => { setBotQuery(suggestion); botSearch(suggestion); }}
+                style={{ ...pillStyle(C.bgWarm, C.inkSec), cursor: "pointer", border: `1px solid ${C.borderLight}`, fontSize: 10 }}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
