@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { getAllAgents, runAgent, AGENT_STATUS, getTaskHistory, saveTask } from "../lib/agents/agentFramework";
 import "../lib/agents/leadEnrichmentAgent";
 import "../lib/agents/leadScraperAgent";
+import "../lib/agents/londonEventsAgent";
 
 // ── Theme (matches LeadEngine) ──
 const C = {

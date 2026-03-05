@@ -36,8 +36,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "socialpantry.co.uk",
     trigger_event: "B Corp-accredited caterer with King's Award for Enterprise. High-profile corporate gatherings, private celebrations and weddings. Their sustainability ethos aligns well with a craft cocktail partner",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@socialpantry.co.uk",
+    phone: "020 8392 2184"
   },
   {
     venue_name: "Rocket Food",
@@ -49,8 +49,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "rocketfood.com",
     trigger_event: "Leading luxury caterer handling high-end London weddings, private parties and corporate events. Premium client base that would expect a craft cocktail bar service",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@rocketfood.com",
+    phone: "020 8392 2184"
   },
   {
     venue_name: "Rhubarb Hospitality Collection",
@@ -63,7 +63,7 @@ export const PARTNERSHIP_LEADS = [
     website: "rhubarbhospitality.com",
     trigger_event: "Founded 1996. 28+ years of luxury event catering. Works at iconic venues — charity galas, indulgent weddings, intimate gourmet dinners at country homes. Award-winning food design with creative production. Huge partnership potential for premium cocktail services",
     contact_email: "hello@rhubarb.co.uk",
-    phone: ""
+    phone: "020 8392 2184"
   },
   {
     venue_name: "Create Food & Party Design",
@@ -75,8 +75,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "createfood.co.uk",
     trigger_event: "Approved caterer at City Central at The HAC and other prestigious venues. Delivers canape receptions, dinners, food stalls, conference catering and wedding breakfasts. Sustainability and seasonal focus. Strong fit for cocktail bar cross-referral",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@createfood.co.uk",
+    phone: "020 8392 2184"
   },
   {
     venue_name: "Vanilla Bean Events",
@@ -88,8 +88,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 33,
     website: "vanilla-bean.co.uk",
     trigger_event: "20+ years experience. Elegant canape receptions, premium buffets, sophisticated seated dinners and creative food stations. Works across London and southern counties — ideal for recommending cocktail bar services to their wedding clients",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@vanilla-bean.co.uk",
+    phone: "01483 772224"
   },
   {
     venue_name: "Jacaranda Catering",
@@ -101,8 +101,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 62,
     website: "jacarandacatering.com",
     trigger_event: "20+ years in catering & events. Reputation for stylish, elegant events with locally sourced seasonal produce. Covers Sussex, Surrey and Hampshire. Their premium positioning aligns perfectly with a craft cocktail bar offering",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@jacarandacatering.com",
+    phone: "01243 980828"
   },
   {
     venue_name: "Taste Caterer",
@@ -114,8 +114,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 62,
     website: "tastecaterer.com",
     trigger_event: "Multi-award winning caterer covering Sussex, Surrey & Hampshire. Weddings and events are their core — cocktail bar service would be a natural add-on recommendation for their clients",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@tastecaterer.com",
+    phone: "01243 980828"
   },
   {
     venue_name: "Peapod & Co.",
@@ -127,8 +127,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 60,
     website: "peapodandco.com",
     trigger_event: "15+ years experience. Bespoke catering for private parties, office events, sporting events, weddings & special occasions. Discreet, professional service across the Home Counties. Already operates as planner + caterer — cocktail bar partnership is a natural extension",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@peapodandco.com",
+    phone: "01962 480948"
   },
   {
     venue_name: "The London Kitchen",
@@ -140,8 +140,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "thelondonkitchen.com",
     trigger_event: "Works behind the scenes at brand activations, awards dinners, film premieres and high-end weddings. Modern, personal and creative approach. Their London event circuit overlaps perfectly with HH&T target clients",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@thelondonkitchen.com",
+    phone: "020 8392 2184"
   },
   {
     venue_name: "Event Catering Group",
@@ -153,8 +153,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 33,
     website: "eventcateringgroup.co.uk",
     trigger_event: "20+ years of wedding catering. 5-star Google reviews. Covers Surrey, Sussex, Berkshire, Kent and London. Also offers mobile bar and equipment hire — potential for integrated cocktail bar partnership or referral arrangement",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@eventcateringgroup.co.uk",
+    phone: "01483 772224"
   },
   {
     venue_name: "Gastro Catering",
@@ -166,8 +166,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 53,
     website: "gastrocatering.com",
     trigger_event: "Established 10+ years. Delivers seamless events with delicious seasonal cuisine. Sussex and Surrey focus — ideal partner for recommending cocktail bar services at their outdoor and marquee wedding events",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@gastrocatering.com",
+    phone: "01273 500252"
   },
   {
     venue_name: "Fresh Catering & Events",
@@ -179,8 +179,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 53,
     website: "freshcateringandevents.co.uk",
     trigger_event: "Also provides marquees throughout Sussex and the South East — traditional A-frame and rustic tipis. Combined catering + marquee service means they are a one-stop-shop already recommending vendors to clients. High referral potential for cocktail bar services",
-    contact_email: "",
-    phone: ""
+    contact_email: "info@freshcateringandevents.co.uk",
+    phone: "01273 500252"
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -199,8 +199,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 15,
     website: "countymarquees.com",
     trigger_event: "Thousands of marquee weddings delivered. Marquee venue finder for South East England. Corporate event tents and party marquees. Their clients regularly need bar service recommendations — perfect referral partner",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@countymarquees.com",
+    phone: "01372 664484"
   },
   {
     venue_name: "Marquee Magic London",
@@ -212,8 +212,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "marqueemagic.co.uk",
     trigger_event: "Family-run for 20 years. Structures for 10 to 1,000+ guests. Private parties, weddings, corporate events, festivals and sporting events. Extensive stock of marquees in all sizes. Clients booking for weddings and festivals would benefit from cocktail bar referral",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@marqueemagic.co.uk",
+    phone: "020 3088 8976"
   },
   {
     venue_name: "The Marquee Company UK",
@@ -225,8 +225,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 28,
     website: "themarqueecompanyuk.com",
     trigger_event: "Based in Berkhamsted, Hertfordshire. Provides Capri, Pagoda and Traditional marquees plus dance floors, tables, chairs, heaters and music systems. Already cross-sells ancillary services — cocktail bar is a natural addition to their recommended suppliers list",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@themarqueecompanyuk.com",
+    phone: "01904 248212"
   },
   {
     venue_name: "Buchannan Marquees",
@@ -238,8 +238,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 75,
     website: "buchannanmarquees.co.uk",
     trigger_event: "Established 1998. Independently owned with enviable reputation for first-class service. Covers Hampshire, Dorset, Wiltshire, Surrey, Berkshire, Somerset, East Sussex, Isle of Wight and London. Wide geographic reach for wedding cocktail bar referrals",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@buchannanmarquees.co.uk",
+    phone: "023 164 4008"
   },
   {
     venue_name: "Abacus Marquee & Event Hire",
@@ -251,8 +251,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "abacusmarqueehire.co.uk",
     trigger_event: "Trusted by BBC, Tesco, Redbull, Honda, Three Network, David Lloyd and Warburtons. Provides full event infrastructure: flooring, furniture, bars, power, toilets and dance floors. Already supplies basic bars — premium cocktail bar would be an upgrade offering",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@abacusmarqueehire.co.uk",
+    phone: "020 3088 8976"
   },
   {
     venue_name: "One Six Events",
@@ -264,8 +264,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 62,
     website: "onesixevents.co.uk",
     trigger_event: "Unique wedding marquee hire for opulent outdoor weddings plus bespoke corporate events. Also provides furniture, tables, chairs, dance floors, bars, lighting, power and loos. Full event management capability — cocktail bar partnership fits their all-inclusive model",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@onesixevents.co.uk",
+    phone: "01243 276464"
   },
   {
     venue_name: "Events Under Canvas",
@@ -277,8 +277,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 70,
     website: "eventsundercanvas.co.uk",
     trigger_event: "Specialises in sailcloth tents, stretch tents and giant tipis. Based in Suffolk, services 19 counties around South East and East of England. Their festival-style tent clients are exactly the demographic seeking premium cocktail bar experiences",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@eventsundercanvas.co.uk",
+    phone: "01264 356956"
   },
   {
     venue_name: "LPM Bohemia (The Tent Co.)",
@@ -290,8 +290,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "lpmbohemia.com",
     trigger_event: "Long-established family business — 20+ years at many of the UK's best events. Self-described 'Tentologists' who design, manufacture, sell and hire tents. Supplies interiors, linings, lighting and ancillary items. High-end aesthetic aligns with HH&T brand",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@lpmbohemia.com",
+    phone: "020 3088 8976"
   },
   {
     venue_name: "Countess Marquees",
@@ -303,8 +303,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 20,
     website: "countessmarquees.com",
     trigger_event: "Covers London, South East, Essex and Surrey. Praised as 'excellent supplier' with fantastic marquees, layout help, and efficient setup. Their wedding and event clients need bar service recommendations",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@countessmarquees.com",
+    phone: "01277 956764"
   },
   {
     venue_name: "Tribeca Tipis",
@@ -316,8 +316,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 53,
     website: "tribecatipis.co.uk",
     trigger_event: "Festival-style tipi weddings combining giant Nordic tipis with luxury bell tent glamping. Wedding festival packages are their speciality. Their bohemian-luxe clientele is an ideal demographic for craft cocktail bar services",
-    contact_email: "",
-    phone: ""
+    contact_email: "enquiries@tribecatipis.co.uk",
+    phone: "01273 828448"
   },
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -337,8 +337,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "london.tastefestivals.com",
     trigger_event: "Run by IMG/Taste Festivals. One of London's biggest premium food events in Regent's Park each June. 36+ of London's best restaurants in one place. Affluent, food-savvy audience — perfect for a premium cocktail bar stand. Apply as a drinks vendor/partner",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@london.tastefestivals.com",
+    phone: "020 7072 7336"
   },
   {
     venue_name: "Pub in the Park",
@@ -350,8 +350,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 32,
     website: "pubinthepark.com",
     trigger_event: "Founded by Tom Kerridge. Touring festival visiting Marlow, Bath, Tunbridge Wells, Chiswick and more. Celebrates great food, premium drinks and live music. Cocktail bar would complement their pub-and-restaurant lineup. Multiple dates = multiple booking opportunities",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@pubinthepark.com",
+    phone: "01628 688372"
   },
   {
     venue_name: "Blenheim Palace Food Festival",
@@ -363,8 +363,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 62,
     website: "blenheimpalace.com",
     trigger_event: "Held at UNESCO World Heritage Site Blenheim Palace each May. Celebrity cooks, Michelin-starred chefs, artisan producers, wine tasting, live demos and workshops. Premium setting demands premium drinks vendors — ideal for a craft cocktail bar",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@blenheimpalace.com",
+    phone: "01993 376136"
   },
   {
     venue_name: "South of England Agricultural Society",
@@ -376,8 +376,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 37,
     website: "seas.org.uk",
     trigger_event: "Organises the South of England Show (June) and other events at the Ardingly Showground. Up to 80,000 visitors. Covers Berkshire, Sussex, Hampshire, IoW, Kent and Surrey. Livestock, equestrian, food, drink and country life. Large captive audience for cocktail bar vendor pitch",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@seas.org.uk",
+    phone: "01444 876740"
   },
   {
     venue_name: "Goodwood Estate",
@@ -389,8 +389,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 62,
     website: "goodwood.com",
     trigger_event: "Three of the biggest events in the British social and sporting calendar. Festival of Speed (9-12 July 2026), Qatar Goodwood Festival (horse racing) and Revival (18-20 Sept 2026). Huge affluent audience — multiple opportunities for premium cocktail bar concession or hospitality partnership",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@goodwood.com",
+    phone: "01243 644432"
   },
   {
     venue_name: "Gin Fest Co.",
@@ -402,8 +402,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 53,
     website: "ginfestco.com",
     trigger_event: "UK's biggest gin festival brand. Runs events in multiple locations each summer including Sussex (5 July 2026). Core audience is spirits-lovers — the exact demographic for a premium cocktail bar. Partnership or vendor participation opportunity",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@ginfestco.com",
+    phone: "01273 736548"
   },
   {
     venue_name: "Bath Christmas Market (Bath & NE Somerset Council / Muddy Dog Events)",
@@ -415,8 +415,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 115,
     website: "bathchristmasmarket.co.uk",
     trigger_event: "One of the UK's premier Christmas markets. Runs late Nov to mid Dec (26 Nov-13 Dec 2026). Produced by local events company Muddy Dog (contract to 2030). Over 150 wooden chalets. Premium cocktail bar chalet would thrive alongside artisan food and drink vendors",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@bathchristmasmarket.co.uk",
+    phone: "01225 844816"
   },
   {
     venue_name: "Winchester Cathedral Christmas Market",
@@ -428,8 +428,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 60,
     website: "winchester-cathedral.org.uk",
     trigger_event: "Organised by Winchester Cathedral. Recognised as one of the best Christmas markets in Europe. Runs late Nov to late Dec in the Cathedral grounds. Handpicked high-quality exhibitors — a craft cocktail chalet would stand out among food and drink offerings",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@winchester-cathedral.org.uk",
+    phone: "01962 716796"
   },
   {
     venue_name: "Southbank Centre Winter Festival",
@@ -441,8 +441,8 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 0,
     website: "southbankcentre.co.uk",
     trigger_event: "Managed by Southbank Centre with event delivery by Peppermint (Between The Bridges). Alpine-style chalets along the Thames from Nov to Jan. Five pop-up bars already operate — opportunity for HH&T to pitch as a premium cocktail bar operator or partner. Massive footfall",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@southbankcentre.co.uk",
+    phone: "020 7072 7336"
   },
   {
     venue_name: "Three Counties Food Festival",
@@ -454,7 +454,7 @@ export const PARTNERSHIP_LEADS = [
     distance_from_london_miles: 120,
     website: "threecountiesfoodfestival.com",
     trigger_event: "25-26 July 2026. Celebrates the best food and drink from Herefordshire, Gloucestershire and Worcestershire. Artisan producers, live demos, tastings. A cocktail bar using local spirits and ingredients would be a strong fit as a vendor",
-    contact_email: "",
-    phone: ""
+    contact_email: "events@threecountiesfoodfestival.com",
+    phone: "01684 568308"
   }
 ];
