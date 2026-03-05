@@ -203,49 +203,43 @@ export default function Library() {
   const botSearch = useCallback((query) => {
     if (!query.trim()) return;
     const q = query.toLowerCase();
+    const words = q.split(/\s+/).filter(w => w.length > 2);
     setBotConversation(prev => [...prev, { role: "user", text: query }]);
     setBotQuery("");
 
-    // Search files by name, tags, collection, creator
-    const matches = files.filter(f => {
-      const name = f.name.toLowerCase();
-      const tags = (f.tags || []).join(" ").toLowerCase();
-      const creator = (f.createdBy || "").toLowerCase();
-      const col = COLLECTIONS.find(c => c.id === f.collection)?.label?.toLowerCase() || "";
-      return name.includes(q) || tags.includes(q) || creator.includes(q) || col.includes(q)
-        || q.split(/\s+/).every(word => (name + " " + tags + " " + col + " " + creator).includes(word));
-    });
+    // Single pass: build haystack once per file, check exact + fuzzy together
+    const exact = [];
+    const fuzzy = [];
+    for (const f of files) {
+      const haystack = [f.name, (f.tags || []).join(" "), f.createdBy || "", COLLECTIONS.find(c => c.id === f.collection)?.label || ""].join(" ").toLowerCase();
+      if (haystack.includes(q) || q.split(/\s+/).every(w => haystack.includes(w))) {
+        exact.push(f);
+      } else if (words.some(w => haystack.includes(w))) {
+        fuzzy.push(f);
+      }
+    }
 
     setTimeout(() => {
-      if (matches.length === 0) {
-        // Try fuzzy — match any word
-        const words = q.split(/\s+/).filter(w => w.length > 2);
-        const fuzzyMatches = files.filter(f => {
-          const haystack = (f.name + " " + (f.tags || []).join(" ") + " " + (f.createdBy || "") + " " + (COLLECTIONS.find(c => c.id === f.collection)?.label || "")).toLowerCase();
-          return words.some(word => haystack.includes(word));
-        });
-
-        if (fuzzyMatches.length > 0) {
-          setBotConversation(prev => [...prev, {
-            role: "bot",
-            text: `I didn't find an exact match, but here are ${fuzzyMatches.length} related file${fuzzyMatches.length > 1 ? "s" : ""}:`,
-            results: fuzzyMatches.slice(0, 5),
-          }]);
-        } else {
-          setBotConversation(prev => [...prev, {
-            role: "bot",
-            text: `I couldn't find any files matching "${query}". Try different keywords, or check the collection categories on the left. You can also try:\n\n• Search by file type (e.g. "PDF", "photos")\n• Search by person (e.g. "Joe Stokoe")\n• Search by project (e.g. "Diageo", "Pernod Ricard")`,
-          }]);
-        }
+      if (exact.length > 0) {
+        setBotConversation(prev => [...prev, {
+          role: "bot",
+          text: `Found ${exact.length} file${exact.length > 1 ? "s" : ""} matching "${query}":`,
+          results: exact.slice(0, 8),
+        }]);
+      } else if (fuzzy.length > 0) {
+        setBotConversation(prev => [...prev, {
+          role: "bot",
+          text: `I didn't find an exact match, but here are ${fuzzy.length} related file${fuzzy.length > 1 ? "s" : ""}:`,
+          results: fuzzy.slice(0, 5),
+        }]);
       } else {
         setBotConversation(prev => [...prev, {
           role: "bot",
-          text: `Found ${matches.length} file${matches.length > 1 ? "s" : ""} matching "${query}":`,
-          results: matches.slice(0, 8),
+          text: `I couldn't find any files matching "${query}". Try different keywords, or check the collection categories on the left. You can also try:\n\n• Search by file type (e.g. "PDF", "photos")\n• Search by person (e.g. "Joe Stokoe")\n• Search by project (e.g. "Diageo", "Pernod Ricard")`,
         }]);
       }
       setTimeout(() => botMessagesRef.current?.scrollTo({ top: botMessagesRef.current.scrollHeight, behavior: "smooth" }), 50);
-    }, 400 + Math.random() * 300); // Small delay to feel natural
+    }, 400 + Math.random() * 300);
   }, [files]);
 
   // ── Filtering & sorting ──

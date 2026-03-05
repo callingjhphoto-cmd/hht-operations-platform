@@ -7,18 +7,20 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 // ═══════════════════════════════════════════════════════════════
 
 const C = {
-  bg: "#FAFAF8", bgWarm: "#F5F1EC", card: "#FFFFFF", cardHover: "#FDFCFA",
+  bg: "#FAFAF8", bgWarm: "#F5F1EC", card: "#FFFFFF",
   ink: "#18150F", inkSec: "#5C564E", inkMuted: "#9A948C",
-  accent: "#7D5A1A", accentLight: "#B8922E", accentSubtle: "rgba(125,90,26,0.06)",
+  accent: "#7D5A1A", accentSubtle: "rgba(125,90,26,0.06)",
   border: "#E6E1D9", borderLight: "#F0ECE5",
-  success: "#2B7A4B", successBg: "#F0F9F3",
-  warn: "#956018", warnBg: "#FFF9F0",
-  danger: "#9B3535", dangerBg: "#FDF2F2",
-  info: "#2A6680", infoBg: "#F0F7FA",
+  success: "#2B7A4B",
+  danger: "#9B3535",
 };
-const F = { serif: "'Georgia','Times New Roman',serif", sans: "'Inter',-apple-system,'Segoe UI',sans-serif" };
+const F = { sans: "'Inter',-apple-system,'Segoe UI',sans-serif" };
 
 const LS_KEY = "hht_chat_widget_v1";
+
+const PULSE_STYLE = (
+  <style>{`@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}`}</style>
+);
 
 // ── Team members ──
 const TEAM = [
@@ -31,6 +33,8 @@ const TEAM = [
   { id: "casey", name: "Casey Smith", initials: "CS", role: "Bartender", color: "#7D5A1A", online: false },
   { id: "jamie", name: "Jamie Brown", initials: "JB", role: "Bartender", color: "#4A7D6B", online: false },
 ];
+
+const TEAM_BY_ID = Object.fromEntries(TEAM.map(t => [t.id, t]));
 
 // ── Default channels ──
 const DEFAULT_CHANNELS = [
@@ -78,7 +82,6 @@ const DEFAULT_MESSAGES = {
     { id: "wm-18", channelId: "pernod-summer", userId: "sam", text: "Tobacco Dock site visit options: w/c 24 March. What day works?", timestamp: "2025-03-04T15:00:00Z" },
     { id: "wm-19", channelId: "pernod-summer", userId: "pat", text: "Wednesday is clear. I'll coordinate with Emma at Pernod Ricard.", timestamp: "2025-03-04T15:20:00Z" },
   ],
-  // DM conversations
   "dm-alex": [
     { id: "dm-1", channelId: "dm-alex", userId: "alex", text: "Hey Joe, quick question — should I order the Talisker 10 or the Storm for the Diageo event?", timestamp: "2025-03-05T11:00:00Z" },
     { id: "dm-2", channelId: "dm-alex", userId: "joe", text: "Storm — it's the new expression they want to showcase. Sarah confirmed.", timestamp: "2025-03-05T11:05:00Z" },
@@ -97,6 +100,8 @@ const DM_CONTACTS = [
   { id: "dm-pat", name: "Pat Quinn", memberId: "pat", isChannel: false },
 ];
 
+const ALL_SOURCES = [...DEFAULT_CHANNELS, ...DM_CONTACTS];
+
 function generateId() {
   return "wm-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
 }
@@ -105,7 +110,61 @@ function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-const QUICK_REACTIONS = ["👍", "🔥", "✅", "🍸"];
+function getChannelInfo(channelId) {
+  const channel = DEFAULT_CHANNELS.find(c => c.id === channelId);
+  if (channel) return { ...channel, displayName: `# ${channel.name}` };
+  const dm = DM_CONTACTS.find(d => d.id === channelId);
+  if (dm) return { ...dm, displayName: dm.name, member: TEAM_BY_ID[dm.memberId] };
+  return { id: channelId, displayName: channelId, isChannel: true };
+}
+
+// ── Shared sub-component: renders the channel + DM picker list ──
+function ChannelList({ channels, dmMembers, unreadCounts, onSelect }) {
+  return (
+    <>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>Channels</div>
+      {channels.map(ch => (
+        <button
+          key={ch.id}
+          onClick={() => onSelect(ch.id)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "7px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, background: "transparent", color: C.inkSec, transition: "background 0.1s", marginBottom: 1, textAlign: "left" }}
+          onMouseEnter={e => { e.currentTarget.style.background = C.bgWarm; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+        >
+          <span><span style={{ color: C.inkMuted, marginRight: 4 }}>{ch.icon}</span> {ch.name}</span>
+          {unreadCounts[ch.id] > 0 && (
+            <span style={{ background: C.danger, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8 }}>{unreadCounts[ch.id]}</span>
+          )}
+        </button>
+      ))}
+
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4, marginTop: 10 }}>Direct Messages</div>
+      {dmMembers.map(member => {
+        const dmId = `dm-${member.id}`;
+        return (
+          <button
+            key={member.id}
+            onClick={() => onSelect(dmId)}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "7px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, background: "transparent", color: C.inkSec, transition: "background 0.1s", marginBottom: 1, textAlign: "left" }}
+            onMouseEnter={e => { e.currentTarget.style.background = C.bgWarm; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+          >
+            <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ position: "relative", display: "inline-flex" }}>
+                <span style={{ width: 20, height: 20, borderRadius: "50%", background: member.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700 }}>{member.initials}</span>
+                <span style={{ position: "absolute", bottom: -1, right: -1, width: 7, height: 7, borderRadius: "50%", background: member.online ? C.success : C.inkMuted, border: "1.5px solid #fff" }}></span>
+              </span>
+              {member.name}
+            </span>
+            {unreadCounts[dmId] > 0 && (
+              <span style={{ background: C.danger, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8 }}>{unreadCounts[dmId]}</span>
+            )}
+          </button>
+        );
+      })}
+    </>
+  );
+}
 
 // ══════════════════════════════════════════════════════════════
 // CHAT WIDGET
@@ -113,17 +172,16 @@ const QUICK_REACTIONS = ["👍", "🔥", "✅", "🍸"];
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false); // full-size mode
+  const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState(DEFAULT_MESSAGES);
-  const [openConversations, setOpenConversations] = useState([]); // array of channel/DM ids currently open as tabs
-  const [activeTab, setActiveTab] = useState(null); // currently focused tab
+  const [openConversations, setOpenConversations] = useState([]);
+  const [activeTab, setActiveTab] = useState(null);
   const [showChannelPicker, setShowChannelPicker] = useState(false);
-  const [showDmPicker, setShowDmPicker] = useState(false);
   const [messageText, setMessageText] = useState("");
-  const [unreadCounts, setUnreadCounts] = useState({}); // channelId -> count
   const [lastReadTimestamps, setLastReadTimestamps] = useState({});
   const [searchChannels, setSearchChannels] = useState("");
   const messagesEndRef = useRef(null);
+  const persistTimerRef = useRef(null);
   const currentUser = "joe";
 
   // Load persisted data
@@ -140,27 +198,33 @@ export default function ChatWidget() {
     } catch { /* use defaults */ }
   }, []);
 
-  const persist = useCallback((msgs, openConvos, active, lastRead) => {
-    localStorage.setItem(LS_KEY, JSON.stringify({
-      messages: msgs,
-      openConversations: openConvos,
-      activeTab: active,
-      lastReadTimestamps: lastRead,
-    }));
-  }, []);
-
-  // Calculate unread counts
+  // Debounced auto-persist — writes to localStorage at most once per 500ms
   useEffect(() => {
+    clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      localStorage.setItem(LS_KEY, JSON.stringify({
+        messages, openConversations, activeTab, lastReadTimestamps,
+      }));
+    }, 500);
+    return () => clearTimeout(persistTimerRef.current);
+  }, [messages, openConversations, activeTab, lastReadTimestamps]);
+
+  // Derive unread counts (useMemo, not useEffect — no extra render cycle)
+  const unreadCounts = useMemo(() => {
     const counts = {};
-    const allChannels = [...DEFAULT_CHANNELS, ...DM_CONTACTS];
-    allChannels.forEach(ch => {
+    ALL_SOURCES.forEach(ch => {
       const channelMsgs = messages[ch.id] || [];
       const lastRead = lastReadTimestamps[ch.id] || "1970-01-01T00:00:00Z";
       const unread = channelMsgs.filter(m => m.userId !== currentUser && m.timestamp > lastRead).length;
       if (unread > 0) counts[ch.id] = unread;
     });
-    setUnreadCounts(counts);
+    return counts;
   }, [messages, lastReadTimestamps, currentUser]);
+
+  const totalUnread = useMemo(
+    () => Object.values(unreadCounts).reduce((s, c) => s + c, 0),
+    [unreadCounts]
+  );
 
   // Scroll to bottom when tab or messages change
   useEffect(() => {
@@ -171,18 +235,14 @@ export default function ChatWidget() {
 
   // Mark channel as read when viewing it
   useEffect(() => {
-    if (isOpen && activeTab) {
-      const channelMsgs = messages[activeTab] || [];
-      const lastMsg = channelMsgs[channelMsgs.length - 1];
-      if (lastMsg) {
-        setLastReadTimestamps(prev => {
-          const updated = { ...prev, [activeTab]: lastMsg.timestamp };
-          persist(messages, openConversations, activeTab, updated);
-          return updated;
-        });
-      }
-    }
-  }, [isOpen, activeTab, messages, openConversations, persist]);
+    if (!isOpen || !activeTab) return;
+    const channelMsgs = messages[activeTab] || [];
+    const lastMsg = channelMsgs[channelMsgs.length - 1];
+    if (!lastMsg) return;
+    // Skip if already read up to this timestamp
+    if (lastReadTimestamps[activeTab] === lastMsg.timestamp) return;
+    setLastReadTimestamps(prev => ({ ...prev, [activeTab]: lastMsg.timestamp }));
+  }, [isOpen, activeTab, messages, lastReadTimestamps]);
 
   // Simulate incoming messages for demo
   useEffect(() => {
@@ -194,70 +254,47 @@ export default function ChatWidget() {
 
     const timers = demoMessages.map(dm =>
       setTimeout(() => {
-        setMessages(prev => {
-          const channelMsgs = prev[dm.channelId] || [];
-          const newMsg = { id: generateId(), channelId: dm.channelId, userId: dm.userId, text: dm.text, timestamp: new Date().toISOString() };
-          const updated = { ...prev, [dm.channelId]: [...channelMsgs, newMsg] };
-          return updated;
-        });
+        setMessages(prev => ({
+          ...prev,
+          [dm.channelId]: [...(prev[dm.channelId] || []), {
+            id: generateId(), channelId: dm.channelId, userId: dm.userId,
+            text: dm.text, timestamp: new Date().toISOString(),
+          }],
+        }));
       }, dm.delay)
     );
 
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  const totalUnread = Object.values(unreadCounts).reduce((s, c) => s + c, 0);
-
   const openConversation = useCallback((channelId) => {
-    setOpenConversations(prev => {
-      const updated = prev.includes(channelId) ? prev : [...prev, channelId];
-      setActiveTab(channelId);
-      persist(messages, updated, channelId, lastReadTimestamps);
-      return updated;
-    });
+    setOpenConversations(prev => prev.includes(channelId) ? prev : [...prev, channelId]);
+    setActiveTab(channelId);
     setShowChannelPicker(false);
-    setShowDmPicker(false);
     setSearchChannels("");
-  }, [messages, lastReadTimestamps, persist]);
+  }, []);
 
   const closeConversation = useCallback((channelId, e) => {
     if (e) e.stopPropagation();
     setOpenConversations(prev => {
       const updated = prev.filter(id => id !== channelId);
-      const newActive = activeTab === channelId ? (updated[updated.length - 1] || null) : activeTab;
-      setActiveTab(newActive);
-      persist(messages, updated, newActive, lastReadTimestamps);
+      setActiveTab(cur => cur === channelId ? (updated[updated.length - 1] || null) : cur);
       return updated;
     });
-  }, [activeTab, messages, lastReadTimestamps, persist]);
+  }, []);
 
   const sendMessage = useCallback(() => {
     if (!messageText.trim() || !activeTab) return;
-    const newMsg = {
-      id: generateId(),
-      channelId: activeTab,
-      userId: currentUser,
-      text: messageText.trim(),
-      timestamp: new Date().toISOString(),
-    };
-    setMessages(prev => {
-      const updated = { ...prev, [activeTab]: [...(prev[activeTab] || []), newMsg] };
-      persist(updated, openConversations, activeTab, lastReadTimestamps);
-      return updated;
-    });
+    const text = messageText.trim();
+    setMessages(prev => ({
+      ...prev,
+      [activeTab]: [...(prev[activeTab] || []), {
+        id: generateId(), channelId: activeTab, userId: currentUser,
+        text, timestamp: new Date().toISOString(),
+      }],
+    }));
     setMessageText("");
-  }, [messageText, activeTab, openConversations, lastReadTimestamps, persist, currentUser]);
-
-  const getChannelInfo = useCallback((channelId) => {
-    const channel = DEFAULT_CHANNELS.find(c => c.id === channelId);
-    if (channel) return { ...channel, displayName: `# ${channel.name}` };
-    const dm = DM_CONTACTS.find(d => d.id === channelId);
-    if (dm) {
-      const member = TEAM.find(t => t.id === dm.memberId);
-      return { ...dm, displayName: dm.name, member };
-    }
-    return { id: channelId, displayName: channelId, isChannel: true };
-  }, []);
+  }, [messageText, activeTab, currentUser]);
 
   const filteredChannels = useMemo(() => {
     const q = searchChannels.toLowerCase();
@@ -269,10 +306,9 @@ export default function ChatWidget() {
     return TEAM.filter(t => t.id !== currentUser && (!q || t.name.toLowerCase().includes(q)));
   }, [searchChannels, currentUser]);
 
-  const activeMessages = activeTab ? (messages[activeTab] || []) : [];
-  const activeChannelInfo = activeTab ? getChannelInfo(activeTab) : null;
+  const activeMessages = useMemo(() => activeTab ? (messages[activeTab] || []) : [], [activeTab, messages]);
+  const activeChannelInfo = useMemo(() => activeTab ? getChannelInfo(activeTab) : null, [activeTab]);
 
-  // Widget dimensions
   const widgetWidth = isExpanded ? 520 : 380;
   const widgetHeight = isExpanded ? 560 : 440;
 
@@ -359,8 +395,7 @@ export default function ChatWidget() {
                       borderBottom: isActive ? `2px solid ${C.accent}` : "2px solid transparent",
                       background: isActive ? C.card : "transparent", cursor: "pointer", fontSize: 11,
                       fontWeight: isActive ? 600 : 400, color: isActive ? C.accent : C.inkSec,
-                      fontFamily: F.sans, whiteSpace: "nowrap", flexShrink: 0, position: "relative",
-                      transition: "all 0.1s",
+                      fontFamily: F.sans, whiteSpace: "nowrap", flexShrink: 0, transition: "all 0.1s",
                     }}
                   >
                     {info.isChannel ? (
@@ -389,7 +424,6 @@ export default function ChatWidget() {
                   </button>
                 );
               })}
-              {/* New conversation button */}
               <button
                 onClick={() => setShowChannelPicker(true)}
                 style={{ padding: "6px 10px", border: "none", background: "transparent", cursor: "pointer", fontSize: 14, color: C.inkMuted, flexShrink: 0 }}
@@ -407,7 +441,6 @@ export default function ChatWidget() {
             {openConversations.length === 0 || !activeTab ? (
               <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Open a conversation</div>
-
                 <input
                   type="text"
                   placeholder="Search channels or people..."
@@ -415,47 +448,7 @@ export default function ChatWidget() {
                   onChange={e => setSearchChannels(e.target.value)}
                   style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F.sans, background: C.card, color: C.ink, outline: "none", width: "100%", marginBottom: 10, boxSizing: "border-box" }}
                 />
-
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4, marginTop: 4 }}>Channels</div>
-                {filteredChannels.map(ch => (
-                  <button
-                    key={ch.id}
-                    onClick={() => openConversation(ch.id)}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "7px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, background: "transparent", color: C.inkSec, transition: "background 0.1s", marginBottom: 1, textAlign: "left" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = C.bgWarm; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <span><span style={{ color: C.inkMuted, marginRight: 4 }}>{ch.icon}</span> {ch.name}</span>
-                    {unreadCounts[ch.id] > 0 && (
-                      <span style={{ background: C.danger, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8 }}>{unreadCounts[ch.id]}</span>
-                    )}
-                  </button>
-                ))}
-
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4, marginTop: 10 }}>Direct Messages</div>
-                {filteredDms.map(member => {
-                  const dmId = `dm-${member.id}`;
-                  return (
-                    <button
-                      key={member.id}
-                      onClick={() => openConversation(dmId)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "7px 8px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, background: "transparent", color: C.inkSec, transition: "background 0.1s", marginBottom: 1, textAlign: "left" }}
-                      onMouseEnter={e => { e.currentTarget.style.background = C.bgWarm; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                    >
-                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ position: "relative", display: "inline-flex" }}>
-                          <span style={{ width: 20, height: 20, borderRadius: "50%", background: member.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700 }}>{member.initials}</span>
-                          <span style={{ position: "absolute", bottom: -1, right: -1, width: 7, height: 7, borderRadius: "50%", background: member.online ? C.success : C.inkMuted, border: "1.5px solid #fff" }}></span>
-                        </span>
-                        {member.name}
-                      </span>
-                      {unreadCounts[dmId] > 0 && (
-                        <span style={{ background: C.danger, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8 }}>{unreadCounts[dmId]}</span>
-                      )}
-                    </button>
-                  );
-                })}
+                <ChannelList channels={filteredChannels} dmMembers={filteredDms} unreadCounts={unreadCounts} onSelect={openConversation} />
               </div>
             ) : (
               <>
@@ -491,7 +484,7 @@ export default function ChatWidget() {
                     </div>
                   )}
                   {activeMessages.map(msg => {
-                    const user = TEAM.find(t => t.id === msg.userId);
+                    const user = TEAM_BY_ID[msg.userId];
                     if (!user) return null;
                     const isMe = msg.userId === currentUser;
                     return (
@@ -561,39 +554,7 @@ export default function ChatWidget() {
                   style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 12, fontFamily: F.sans, background: C.card, color: C.ink, outline: "none", width: "100%", marginBottom: 8, boxSizing: "border-box" }}
                   autoFocus
                 />
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>Channels</div>
-                {filteredChannels.map(ch => (
-                  <button
-                    key={ch.id}
-                    onClick={() => openConversation(ch.id)}
-                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "6px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, background: "transparent", color: C.inkSec, textAlign: "left", marginBottom: 1 }}
-                    onMouseEnter={e => { e.currentTarget.style.background = C.bgWarm; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <span>{ch.icon} {ch.name}</span>
-                    {unreadCounts[ch.id] > 0 && <span style={{ background: C.danger, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8 }}>{unreadCounts[ch.id]}</span>}
-                  </button>
-                ))}
-                <div style={{ fontSize: 10, fontWeight: 700, color: C.inkMuted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4, marginTop: 8 }}>Direct Messages</div>
-                {filteredDms.map(member => {
-                  const dmId = `dm-${member.id}`;
-                  return (
-                    <button
-                      key={member.id}
-                      onClick={() => openConversation(dmId)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "6px 8px", borderRadius: 4, border: "none", cursor: "pointer", fontSize: 12, fontFamily: F.sans, background: "transparent", color: C.inkSec, textAlign: "left", marginBottom: 1 }}
-                      onMouseEnter={e => { e.currentTarget.style.background = C.bgWarm; }}
-                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                    >
-                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ width: 16, height: 16, borderRadius: "50%", background: member.color, color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 7, fontWeight: 700 }}>{member.initials}</span>
-                        {member.name}
-                        {member.online && <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.success }}></span>}
-                      </span>
-                      {unreadCounts[dmId] > 0 && <span style={{ background: C.danger, color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 8 }}>{unreadCounts[dmId]}</span>}
-                    </button>
-                  );
-                })}
+                <ChannelList channels={filteredChannels} dmMembers={filteredDms} unreadCounts={unreadCounts} onSelect={openConversation} />
                 <button onClick={() => { setShowChannelPicker(false); setSearchChannels(""); }} style={{ width: "100%", padding: "6px", border: "none", background: "transparent", cursor: "pointer", fontSize: 11, color: C.inkMuted, marginTop: 6 }}>Cancel</button>
               </div>
             </div>
@@ -601,13 +562,7 @@ export default function ChatWidget() {
         </div>
       )}
 
-      {/* Pulse animation for notification badge */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.15); }
-        }
-      `}</style>
+      {PULSE_STYLE}
     </div>
   );
 }
