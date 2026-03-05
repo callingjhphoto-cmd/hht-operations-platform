@@ -8,6 +8,9 @@ import StaffManager from "./components/StaffManager";
 import InventoryManager from "./components/InventoryManager";
 import ClientPortal from "./components/ClientPortal";
 import DocumentManager from "./components/DocumentManager";
+import Library from "./components/Library";
+import EmailHub from "./components/EmailHub";
+import TeamChat from "./components/TeamChat";
 import { initializeStore } from "./lib/store";
 import { RAW_LEADS } from "./lib/seedData";
 
@@ -818,8 +821,13 @@ const NAV_SECTIONS = [
     { id: "finance", label: "Financial Hub", icon: "◇" },
     { id: "time", label: "Time & Utilisation", icon: "◐" },
   ]},
-  { label: "Admin", items: [
+  { label: "Library & Files", items: [
+    { id: "library", label: "Library", icon: "◩" },
     { id: "documents", label: "Documents", icon: "▧" },
+  ]},
+  { label: "Communication", items: [
+    { id: "email", label: "Email", icon: "◈" },
+    { id: "chat", label: "Team Chat", icon: "◬" },
   ]},
 ];
 
@@ -837,6 +845,7 @@ export default function App() {
     finance: FinancialHub, ai: AIAssistant, quotes: QuoteBuilder, events: EventManager,
     invoices: InvoiceManager, staff: StaffManager, inventory: InventoryManager,
     clients: ClientPortal, documents: DocumentManager,
+    library: Library, email: EmailHub, chat: TeamChat,
   };
   const Page = pages[page] || CommandCentre;
 
