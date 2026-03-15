@@ -48,3 +48,46 @@ input:focus {
 button {
   font-family: 'Lato', -apple-system, system-ui, sans-serif;
 }
+
+
+/* ── Shimmer animation for loading skeletons ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Subtle pulse for notification badge ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ── Smooth scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E6E1D9;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9A948C;
+}
+
+/* ── Focus styles ── */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #7D5A1A;
+  outline-offset: 2px;
+}
+
+/* ── Table row hover transition ── */
+tr {
+  transition: background 0.15s ease;
+}

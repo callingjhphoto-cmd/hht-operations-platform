@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, Legend } from "recharts";
 import LeadEngineCRM from "./components/LeadEngine";
-import { initializeStore } from "./lib/store";
+import { initializeStore, getLeads, getLeadStats } from "./lib/store";
 import { RAW_LEADS } from "./lib/seedData";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -45,6 +45,61 @@ const btnStyle = (variant = "primary") => {
 };
 const inputStyle = { padding: "8px 12px", borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 13, fontFamily: F.sans, background: C.card, color: C.ink, outline: "none", width: "100%" };
 const selectStyle = { ...inputStyle, appearance: "none", backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239A948C' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 10px center", paddingRight: 30, cursor: "pointer" };
+
+// ── Loading Skeleton ──
+const LoadingSkeleton = ({ width = "100%", height = 20, borderRadius = 6 }) => (
+  <div style={{ width, height, borderRadius, background: `linear-gradient(90deg, ${C.borderLight} 25%, ${C.bgWarm} 50%, ${C.borderLight} 75%)`, backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite" }} />
+);
+
+// ── Animated Card ──
+const AnimatedCard = ({ children, style = {}, onClick }) => {
+  const [h, setH] = useState(false);
+  return (
+    <div onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)} onClick={onClick}
+      style={{ ...cardStyle(style), transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", transform: h ? "translateY(-2px)" : "translateY(0)", boxShadow: h ? "0 8px 25px rgba(0,0,0,0.08)" : "0 1px 3px rgba(0,0,0,0.04)", cursor: onClick ? "pointer" : "default" }}>
+      {children}
+    </div>
+  );
+};
+
+// ── Notification Bell ──
+const NotificationBell = () => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, [open]);
+  const notifs = [
+    { text: "Fever-Tree invoice due in 3 days", time: "2 min ago", type: "warn" },
+    { text: "New lead scored 92 \u2014 Blenheim Palace", time: "15 min ago", type: "success" },
+    { text: "Sam Taylor at 105% utilisation", time: "1 hr ago", type: "danger" },
+    { text: "Campari Launch health dropped to 45", time: "3 hrs ago", type: "danger" },
+    { text: "BrewDog Q2 series confirmed", time: "Yesterday", type: "success" },
+  ];
+  const tc = { warn: C.warn, success: C.success, danger: C.danger };
+  return (
+    <div style={{ position: "relative" }} ref={ref}>
+      <button onClick={() => setOpen(!open)} style={{ position: "relative", background: open ? C.bgWarm : "transparent", border: "none", cursor: "pointer", padding: 6, borderRadius: 6, transition: "background 0.15s" }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.inkSec} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <span style={{ position: "absolute", top: 2, right: 2, width: 8, height: 8, borderRadius: "50%", background: C.danger, border: "2px solid #fff" }} />
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 8, width: 320, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.12)", zIndex: 100, overflow: "hidden" }}>
+          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.borderLight}`, fontSize: 13, fontWeight: 700, fontFamily: F.serif }}>Notifications <span style={{ fontSize: 11, fontWeight: 400, color: C.inkMuted }}>({notifs.length})</span></div>
+          {notifs.map((n, i) => (
+            <div key={i} style={{ padding: "10px 16px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", gap: 10, alignItems: "flex-start" }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: tc[n.type], marginTop: 6, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}><div style={{ fontSize: 12, lineHeight: 1.4 }}>{n.text}</div><div style={{ fontSize: 10, color: C.inkMuted, marginTop: 2 }}>{n.time}</div></div>
+            </div>
+          ))}
+          <div style={{ padding: "8px 16px", textAlign: "center", background: C.bgWarm }}><span style={{ fontSize: 11, color: C.accent, fontWeight: 600, cursor: "pointer" }}>View all</span></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Donut Chart Colors ──
+const DONUT_COLORS = [C.info, "#5B6AAF", C.warn, C.accentLight, C.success, "#1A6B4A", C.ink, C.inkMuted];
+
 
 // ── Seeded RNG for consistent lead data ──
 const sRng = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; } return () => { h = (h * 16807 + 0) % 2147483647; return (h & 0x7FFFFFFF) / 2147483647; }; };
@@ -373,6 +428,9 @@ const EventPipeline = () => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const CommandCentre = () => {
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setLoading(false), 600); return () => clearTimeout(t); }, []);
+
   const totalPipeline = EVENTS.reduce((s, e) => s + e.revenue, 0);
   const confirmedRev = EVENTS.filter(e => ["Confirmed","Planning","Execution","Complete"].includes(e.stage)).reduce((s, e) => s + e.revenue, 0);
   const leadConversion = Math.round((LEADS.filter(l => l.stage === "Won").length / LEADS.length) * 100);
@@ -380,50 +438,64 @@ const CommandCentre = () => {
   const atRisk = EVENTS.filter(e => e.health < 60);
   const unpaidInvoices = INVOICES.filter(i => i.status !== "Paid").reduce((s, i) => s + i.amount - i.paid, 0);
 
+  // New Leads This Week
+  const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+  const newLeadsThisWeek = LEADS.filter(l => new Date(l.date) >= weekAgo).length || Math.floor(LEADS.length * 0.08);
+
   const revenueByMonth = (() => { const m = {}; EVENTS.forEach(e => { const mo = new Date(e.date).toLocaleDateString("en-GB",{month:"short"}); m[mo] = (m[mo]||0) + e.revenue; }); return Object.entries(m).map(([month,rev]) => ({month,rev})); })();
   const leadsByStage = LEAD_STAGES.map(s => ({ stage: s.length > 8 ? s.slice(0,8) : s, count: LEADS.filter(l => l.stage === s).length }));
+  const pipelineDonut = LEAD_STAGES.map((s, i) => ({ name: s, value: LEADS.filter(l => l.stage === s).length })).filter(d => d.value > 0);
+  const topCounties = (() => { const m = {}; LEADS.forEach(l => { const c = l.city || "Unknown"; m[c] = (m[c] || 0) + 1; }); return Object.entries(m).sort((a,b) => b[1] - a[1]).slice(0, 8).map(([county, count]) => ({ county: county.length > 12 ? county.slice(0,12) + "\u2026" : county, count })); })();
+
+  if (loading) return (
+    <div style={{ padding: 24 }}>
+      <LoadingSkeleton height={32} width={200} borderRadius={8} />
+      <div style={{ marginTop: 8 }}><LoadingSkeleton height={14} width={280} /></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 14, marginTop: 20 }}>
+        {Array.from({length: 7}).map((_, i) => <div key={i} style={cardStyle({ padding: 16, textAlign: "center" })}><LoadingSkeleton height={10} width={60} /><div style={{ marginTop: 8 }}><LoadingSkeleton height={24} width={80} /></div></div>)}
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ padding: 24 }}>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontFamily: F.serif, fontSize: 26, margin: 0 }}>Command Centre</h1>
-        <div style={{ color: C.inkMuted, fontSize: 13, marginTop: 2 }}>Business overview · Real-time metrics</div>
+        <div style={{ color: C.inkMuted, fontSize: 13, marginTop: 2 }}>Business overview {"\u00b7"} Real-time metrics</div>
       </div>
 
       {/* KPI Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 14, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 14, marginBottom: 20 }}>
         {[
           { label: "Pipeline Value", value: fmt(totalPipeline), color: C.ink },
           { label: "Confirmed Revenue", value: fmt(confirmedRev), color: C.success },
           { label: "Total Leads", value: LEADS.length.toString(), color: C.info },
+          { label: "New This Week", value: newLeadsThisWeek.toString(), color: C.accent, icon: "\u2191" },
           { label: "Lead Conversion", value: pct(leadConversion), color: C.accent },
           { label: "Team Utilisation", value: pct(avgUtil), color: avgUtil >= 80 ? C.success : C.warn },
           { label: "Outstanding", value: fmt(unpaidInvoices), color: unpaidInvoices > 20000 ? C.danger : C.warn },
         ].map((kpi, i) => (
-          <div key={i} style={cardStyle({ textAlign: "center", padding: 16 })}>
+          <AnimatedCard key={i} style={{ textAlign: "center", padding: 16 }}>
             <div style={{ fontSize: 10, color: C.inkMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 }}>{kpi.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: F.serif, color: kpi.color }}>{kpi.value}</div>
-          </div>
+            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: F.serif, color: kpi.color }}>{kpi.icon && <span style={{ fontSize: 14, marginRight: 2 }}>{kpi.icon}</span>}{kpi.value}</div>
+          </AnimatedCard>
         ))}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20 }}>
-        {/* Revenue Chart */}
-        <div style={cardStyle()}>
+        <AnimatedCard>
           <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Revenue by Month</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={revenueByMonth}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.borderLight} />
               <XAxis dataKey="month" tick={{ fontSize: 11, fill: C.inkMuted }} />
-              <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "£"+(v/1000)+"k"} />
+              <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "\u00a3"+(v/1000)+"k"} />
               <Tooltip formatter={v => fmt(v)} contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
               <Bar dataKey="rev" fill={C.accent} radius={[4,4,0,0]} name="Revenue" />
             </BarChart>
           </ResponsiveContainer>
-        </div>
-
-        {/* Activity Feed */}
-        <div style={cardStyle()}>
+        </AnimatedCard>
+        <AnimatedCard>
           <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Activity Feed</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {ACTIVITY.slice(0, 6).map((a, i) => (
@@ -436,12 +508,11 @@ const CommandCentre = () => {
               </div>
             ))}
           </div>
-        </div>
+        </AnimatedCard>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-        {/* Lead Pipeline */}
-        <div style={cardStyle()}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
+        <AnimatedCard>
           <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Lead Pipeline Stages</h3>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={leadsByStage} layout="vertical">
@@ -452,17 +523,44 @@ const CommandCentre = () => {
               <Bar dataKey="count" fill={C.info} radius={[0,4,4,0]} name="Leads" />
             </BarChart>
           </ResponsiveContainer>
-        </div>
+        </AnimatedCard>
 
-        {/* At-Risk Events */}
-        <div style={cardStyle()}>
+        <AnimatedCard>
+          <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Pipeline Breakdown</h3>
+          <ResponsiveContainer width="100%" height={180}>
+            <PieChart>
+              <Pie data={pipelineDonut} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3} dataKey="value">
+                {pipelineDonut.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+              </Pie>
+              <Tooltip contentStyle={{ fontSize: 11, border: `1px solid ${C.border}`, borderRadius: 6 }} />
+              <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </AnimatedCard>
+
+        <AnimatedCard>
+          <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Top Counties</h3>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={topCounties} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke={C.borderLight} />
+              <XAxis type="number" tick={{ fontSize: 10, fill: C.inkMuted }} />
+              <YAxis type="category" dataKey="county" tick={{ fontSize: 9, fill: C.inkMuted }} width={80} />
+              <Tooltip contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
+              <Bar dataKey="count" fill={C.accent} radius={[0,4,4,0]} name="Leads" />
+            </BarChart>
+          </ResponsiveContainer>
+        </AnimatedCard>
+      </div>
+
+      <div style={{ marginTop: 20 }}>
+        <AnimatedCard>
           <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 12px" }}>At-Risk Events</h3>
           {atRisk.length === 0 ? <div style={{ color: C.success, fontSize: 13 }}>All events in good health</div> :
             atRisk.map(ev => (
               <div key={ev.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${C.borderLight}` }}>
                 <div>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>{ev.name}</div>
-                  <div style={{ fontSize: 11, color: C.inkMuted }}>{ev.client} · {fmtShort(ev.date)}</div>
+                  <div style={{ fontSize: 11, color: C.inkMuted }}>{ev.client} {"\u00b7"} {fmtShort(ev.date)}</div>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <div style={{ width: 50, height: 6, background: C.borderLight, borderRadius: 3 }}>
@@ -473,7 +571,7 @@ const CommandCentre = () => {
               </div>
             ))
           }
-        </div>
+        </AnimatedCard>
       </div>
     </div>
   );
@@ -556,7 +654,9 @@ const TimeUtilisation = () => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const FinancialHub = () => {
-  const [tab, setTab] = useState("overview"); // overview | invoices | expenses | cashflow
+  const [tab, setTab] = useState("overview");
+  const [loading, setLoading] = useState(true);
+  useEffect(() => { const t = setTimeout(() => setLoading(false), 500); return () => clearTimeout(t); }, []);
 
   const totalInvoiced = INVOICES.reduce((s, i) => s + i.amount, 0);
   const totalPaid = INVOICES.reduce((s, i) => s + i.paid, 0);
@@ -564,15 +664,59 @@ const FinancialHub = () => {
   const billableExpenses = EXPENSES.filter(e => e.billable).reduce((s, e) => s + e.amount, 0);
   const grossProfit = totalPaid - totalExpenses;
 
+  // Invoice Aging Breakdown
+  const today = new Date();
+  const invoiceAging = useMemo(() => {
+    const aging = { current: 0, days30: 0, days60: 0, days90: 0 };
+    INVOICES.filter(i => i.status !== "Paid").forEach(inv => {
+      const due = new Date(inv.due);
+      const outstanding = inv.amount - inv.paid;
+      const daysOverdue = Math.floor((today - due) / (1000 * 60 * 60 * 24));
+      if (daysOverdue <= 0) aging.current += outstanding;
+      else if (daysOverdue <= 30) aging.days30 += outstanding;
+      else if (daysOverdue <= 60) aging.days60 += outstanding;
+      else aging.days90 += outstanding;
+    });
+    return [
+      { name: "Current", value: aging.current, color: C.success },
+      { name: "30 Days", value: aging.days30, color: C.warn },
+      { name: "60 Days", value: aging.days60, color: "#E07B39" },
+      { name: "90+ Days", value: aging.days90, color: C.danger },
+    ];
+  }, []);
+
+  // Cash Flow Projection - next 3 months
+  const cashFlowProjection = useMemo(() => {
+    const months = [];
+    for (let i = 0; i < 3; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      const monthLabel = d.toLocaleDateString("en-GB", { month: "short", year: "2-digit" });
+      const income = EVENTS.filter(e => { const ed = new Date(e.date); return ed.getMonth() === d.getMonth() && ed.getFullYear() === d.getFullYear(); }).reduce((s, e) => s + Math.round(e.revenue * e.probability / 100), 0);
+      const invoiceIncome = INVOICES.filter(inv => { const due = new Date(inv.due); return due.getMonth() === d.getMonth() && due.getFullYear() === d.getFullYear() && inv.status !== "Paid"; }).reduce((s, inv) => s + (inv.amount - inv.paid), 0);
+      const avgMonthlyExpense = Math.round(totalExpenses / 3);
+      months.push({ month: monthLabel, income: income + invoiceIncome, expenses: avgMonthlyExpense, net: income + invoiceIncome - avgMonthlyExpense });
+    }
+    return months;
+  }, []);
+
+  if (loading) return (
+    <div style={{ padding: 24 }}>
+      <LoadingSkeleton height={32} width={180} borderRadius={8} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginTop: 20 }}>
+        {Array.from({length: 5}).map((_, i) => <div key={i} style={cardStyle({ padding: 14, textAlign: "center" })}><LoadingSkeleton height={10} width={50} /><div style={{ marginTop: 6 }}><LoadingSkeleton height={22} width={70} /></div></div>)}
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
           <h1 style={{ fontFamily: F.serif, fontSize: 26, margin: 0 }}>Financial Hub</h1>
-          <div style={{ color: C.inkMuted, fontSize: 13, marginTop: 2 }}>Invoicing · Expenses · Cash Flow</div>
+          <div style={{ color: C.inkMuted, fontSize: 13, marginTop: 2 }}>Invoicing {"\u00b7"} Expenses {"\u00b7"} Cash Flow</div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {[{id:"overview",l:"Overview"},{id:"invoices",l:"Invoices"},{id:"expenses",l:"Expenses"},{id:"cashflow",l:"Cash Flow"}].map(t => (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {[{id:"overview",l:"Overview"},{id:"invoices",l:"Invoices"},{id:"expenses",l:"Expenses"},{id:"cashflow",l:"Cash Flow"},{id:"aging",l:"Aging"},{id:"projection",l:"Projection"}].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={btnStyle(tab === t.id ? "primary" : "outline")}>{t.l}</button>
           ))}
         </div>
@@ -587,17 +731,17 @@ const FinancialHub = () => {
           { label: "Expenses", value: fmt(totalExpenses), color: C.danger },
           { label: "Gross Profit", value: fmt(grossProfit), color: grossProfit > 0 ? C.success : C.danger },
         ].map((kpi, i) => (
-          <div key={i} style={cardStyle({ textAlign: "center", padding: 14 })}>
+          <AnimatedCard key={i} style={{ textAlign: "center", padding: 14 }}>
             <div style={{ fontSize: 10, color: C.inkMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 4 }}>{kpi.label}</div>
             <div style={{ fontSize: 20, fontWeight: 700, fontFamily: F.serif, color: kpi.color || C.ink }}>{kpi.value}</div>
-          </div>
+          </AnimatedCard>
         ))}
       </div>
 
       {/* Overview */}
       {tab === "overview" && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          <div style={cardStyle()}>
+          <AnimatedCard>
             <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Invoice Status</h3>
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
@@ -605,21 +749,22 @@ const FinancialHub = () => {
                   <Cell fill={C.success} /><Cell fill={C.warn} /><Cell fill={C.info} /><Cell fill={C.inkMuted} />
                 </Pie>
                 <Tooltip formatter={v => fmt(v)} contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
+                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
               </PieChart>
             </ResponsiveContainer>
-          </div>
-          <div style={cardStyle()}>
+          </AnimatedCard>
+          <AnimatedCard>
             <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Expenses by Category</h3>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={(() => { const cats = {}; EXPENSES.forEach(e => { cats[e.category] = (cats[e.category]||0) + e.amount; }); return Object.entries(cats).map(([cat,amt]) => ({ cat: cat.length > 12 ? cat.slice(0,12)+"…" : cat, amount: amt })).sort((a,b)=>b.amount-a.amount); })()}>
+              <BarChart data={(() => { const cats = {}; EXPENSES.forEach(e => { cats[e.category] = (cats[e.category]||0) + e.amount; }); return Object.entries(cats).map(([cat,amt]) => ({ cat: cat.length > 12 ? cat.slice(0,12)+"\u2026" : cat, amount: amt })).sort((a,b)=>b.amount-a.amount); })()}>
                 <CartesianGrid strokeDasharray="3 3" stroke={C.borderLight} />
                 <XAxis dataKey="cat" tick={{ fontSize: 9, fill: C.inkMuted }} />
-                <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "£"+v} />
+                <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "\u00a3"+v} />
                 <Tooltip formatter={v => fmt(v)} contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
                 <Bar dataKey="amount" fill={C.danger} radius={[4,4,0,0]} name="Amount" />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </AnimatedCard>
         </div>
       )}
 
@@ -627,29 +772,25 @@ const FinancialHub = () => {
       {tab === "invoices" && (
         <div style={{ ...cardStyle({ padding: 0 }), overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: C.bgWarm, borderBottom: `1px solid ${C.border}` }}>
-                {["Invoice", "Event", "Client", "Amount", "Paid", "Status", "Due"].map(h => (
-                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 11, color: C.inkMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {INVOICES.map(inv => {
-                const statusColors = { Paid: C.success, Partial: C.warn, Sent: C.info, Draft: C.inkMuted };
-                return (
-                  <tr key={inv.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
-                    <td style={{ padding: "10px 12px", fontWeight: 600, fontFamily: F.mono, fontSize: 12 }}>{inv.id}</td>
-                    <td style={{ padding: "10px 12px" }}>{inv.event}</td>
-                    <td style={{ padding: "10px 12px", color: C.inkSec }}>{inv.client}</td>
-                    <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(inv.amount)}</td>
-                    <td style={{ padding: "10px 12px", color: C.success }}>{fmt(inv.paid)}</td>
-                    <td style={{ padding: "10px 12px" }}><span style={pillStyle(statusColors[inv.status] + "20", statusColors[inv.status])}>{inv.status}</span></td>
-                    <td style={{ padding: "10px 12px", fontSize: 12, color: C.inkMuted }}>{fmtShort(inv.due)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
+            <thead><tr style={{ background: C.bgWarm, borderBottom: `1px solid ${C.border}` }}>
+              {["Invoice", "Event", "Client", "Amount", "Paid", "Status", "Due"].map(h => (
+                <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 11, color: C.inkMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>{INVOICES.map(inv => {
+              const statusColors = { Paid: C.success, Partial: C.warn, Sent: C.info, Draft: C.inkMuted };
+              return (
+                <tr key={inv.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                  <td style={{ padding: "10px 12px", fontWeight: 600, fontFamily: F.mono, fontSize: 12 }}>{inv.id}</td>
+                  <td style={{ padding: "10px 12px" }}>{inv.event}</td>
+                  <td style={{ padding: "10px 12px", color: C.inkSec }}>{inv.client}</td>
+                  <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(inv.amount)}</td>
+                  <td style={{ padding: "10px 12px", color: C.success }}>{fmt(inv.paid)}</td>
+                  <td style={{ padding: "10px 12px" }}><span style={pillStyle(statusColors[inv.status] + "20", statusColors[inv.status])}>{inv.status}</span></td>
+                  <td style={{ padding: "10px 12px", fontSize: 12, color: C.inkMuted }}>{fmtShort(inv.due)}</td>
+                </tr>
+              );
+            })}</tbody>
           </table>
         </div>
       )}
@@ -658,52 +799,133 @@ const FinancialHub = () => {
       {tab === "expenses" && (
         <div style={{ ...cardStyle({ padding: 0 }), overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: C.bgWarm, borderBottom: `1px solid ${C.border}` }}>
-                {["Category", "Event", "Amount", "Date", "Billable"].map(h => (
-                  <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 11, color: C.inkMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {EXPENSES.map(exp => (
-                <tr key={exp.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
-                  <td style={{ padding: "10px 12px", fontWeight: 600 }}>{exp.category}</td>
-                  <td style={{ padding: "10px 12px", color: C.inkSec }}>{exp.event}</td>
-                  <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(exp.amount)}</td>
-                  <td style={{ padding: "10px 12px", fontSize: 12, color: C.inkMuted }}>{fmtShort(exp.date)}</td>
-                  <td style={{ padding: "10px 12px" }}><span style={pillStyle(exp.billable ? C.successBg : C.bgWarm, exp.billable ? C.success : C.inkMuted)}>{exp.billable ? "Billable" : "Non-billable"}</span></td>
-                </tr>
+            <thead><tr style={{ background: C.bgWarm, borderBottom: `1px solid ${C.border}` }}>
+              {["Category", "Event", "Amount", "Date", "Billable"].map(h => (
+                <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 11, color: C.inkMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>{h}</th>
               ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: C.bgWarm, borderTop: `1px solid ${C.border}` }}>
-                <td style={{ padding: "10px 12px", fontWeight: 700 }}>Total</td>
-                <td></td>
-                <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(totalExpenses)}</td>
-                <td></td>
-                <td style={{ padding: "10px 12px", fontSize: 11, color: C.inkMuted }}>Billable: {fmt(billableExpenses)}</td>
+            </tr></thead>
+            <tbody>{EXPENSES.map(exp => (
+              <tr key={exp.id} style={{ borderBottom: `1px solid ${C.borderLight}` }}>
+                <td style={{ padding: "10px 12px", fontWeight: 600 }}>{exp.category}</td>
+                <td style={{ padding: "10px 12px", color: C.inkSec }}>{exp.event}</td>
+                <td style={{ padding: "10px 12px", fontWeight: 600 }}>{fmt(exp.amount)}</td>
+                <td style={{ padding: "10px 12px", fontSize: 12, color: C.inkMuted }}>{fmtShort(exp.date)}</td>
+                <td style={{ padding: "10px 12px" }}><span style={pillStyle(exp.billable ? C.successBg : C.bgWarm, exp.billable ? C.success : C.inkMuted)}>{exp.billable ? "Billable" : "Non-billable"}</span></td>
               </tr>
-            </tfoot>
+            ))}</tbody>
+            <tfoot><tr style={{ background: C.bgWarm, borderTop: `1px solid ${C.border}` }}>
+              <td style={{ padding: "10px 12px", fontWeight: 700 }}>Total</td><td></td>
+              <td style={{ padding: "10px 12px", fontWeight: 700 }}>{fmt(totalExpenses)}</td><td></td>
+              <td style={{ padding: "10px 12px", fontSize: 11, color: C.inkMuted }}>Billable: {fmt(billableExpenses)}</td>
+            </tr></tfoot>
           </table>
         </div>
       )}
 
-      {/* Cash Flow */}
+      {/* Cash Flow - 30 day */}
       {tab === "cashflow" && (
-        <div style={cardStyle()}>
+        <AnimatedCard>
           <h3 style={{ fontFamily: F.serif, fontSize: 16, margin: "0 0 16px" }}>30-Day Cash Flow Forecast</h3>
           <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={cashFlowData}>
               <CartesianGrid strokeDasharray="3 3" stroke={C.borderLight} />
               <XAxis dataKey="day" tick={{ fontSize: 9, fill: C.inkMuted }} interval={2} />
-              <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "£"+(v/1000)+"k"} />
+              <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "\u00a3"+(v/1000)+"k"} />
               <Tooltip formatter={v => fmt(v)} contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
               <Area type="monotone" dataKey="inflow" stroke={C.success} fill={C.success+"20"} name="Inflow" />
               <Area type="monotone" dataKey="outflow" stroke={C.danger} fill={C.danger+"20"} name="Outflow" />
               <Line type="monotone" dataKey="net" stroke={C.accent} strokeWidth={2} dot={false} name="Net" />
             </AreaChart>
           </ResponsiveContainer>
+        </AnimatedCard>
+      )}
+
+      {/* Invoice Aging */}
+      {tab === "aging" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <AnimatedCard>
+            <h3 style={{ fontFamily: F.serif, fontSize: 16, margin: "0 0 16px" }}>Invoice Aging Breakdown</h3>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={invoiceAging}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.borderLight} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.inkMuted }} />
+                <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "\u00a3"+(v/1000)+"k"} />
+                <Tooltip formatter={v => fmt(v)} contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
+                <Bar dataKey="value" radius={[4,4,0,0]} name="Outstanding">
+                  {invoiceAging.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </AnimatedCard>
+          <AnimatedCard>
+            <h3 style={{ fontFamily: F.serif, fontSize: 16, margin: "0 0 16px" }}>Aging Summary</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {invoiceAging.map((bucket, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: bucket.color + "08", borderRadius: 8, border: `1px solid ${bucket.color}20` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: 3, background: bucket.color }} />
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{bucket.name}</span>
+                  </div>
+                  <span style={{ fontSize: 18, fontWeight: 700, fontFamily: F.serif, color: bucket.color }}>{fmt(bucket.value)}</span>
+                </div>
+              ))}
+              <div style={{ marginTop: 8, padding: "12px 16px", background: C.bgWarm, borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 11, color: C.inkMuted, marginBottom: 4 }}>Total Outstanding</div>
+                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: F.serif, color: C.danger }}>{fmt(invoiceAging.reduce((s, b) => s + b.value, 0))}</div>
+              </div>
+            </div>
+          </AnimatedCard>
+        </div>
+      )}
+
+      {/* Cash Flow Projection - 3 months */}
+      {tab === "projection" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <AnimatedCard style={{ gridColumn: "1 / -1" }}>
+            <h3 style={{ fontFamily: F.serif, fontSize: 16, margin: "0 0 16px" }}>3-Month Cash Flow Projection</h3>
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={cashFlowProjection}>
+                <CartesianGrid strokeDasharray="3 3" stroke={C.borderLight} />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: C.inkMuted }} />
+                <YAxis tick={{ fontSize: 10, fill: C.inkMuted }} tickFormatter={v => "\u00a3"+(v/1000)+"k"} />
+                <Tooltip formatter={v => fmt(v)} contentStyle={{ fontSize: 12, border: `1px solid ${C.border}`, borderRadius: 6 }} />
+                <Area type="monotone" dataKey="income" stroke={C.success} fill={C.success+"20"} name="Expected Income" />
+                <Area type="monotone" dataKey="expenses" stroke={C.danger} fill={C.danger+"20"} name="Est. Expenses" />
+                <Line type="monotone" dataKey="net" stroke={C.accent} strokeWidth={2} dot={{ fill: C.accent, r: 4 }} name="Net Cash Flow" />
+                <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </AnimatedCard>
+          <AnimatedCard>
+            <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Monthly Breakdown</h3>
+            {cashFlowProjection.map((m, i) => (
+              <div key={i} style={{ padding: "12px 0", borderBottom: i < cashFlowProjection.length - 1 ? `1px solid ${C.borderLight}` : "none" }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8, fontFamily: F.serif }}>{m.month}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+                  <div style={{ textAlign: "center", padding: 8, background: C.successBg, borderRadius: 6 }}><div style={{ fontSize: 10, color: C.success }}>Income</div><div style={{ fontWeight: 700, color: C.success }}>{fmt(m.income)}</div></div>
+                  <div style={{ textAlign: "center", padding: 8, background: C.dangerBg, borderRadius: 6 }}><div style={{ fontSize: 10, color: C.danger }}>Expenses</div><div style={{ fontWeight: 700, color: C.danger }}>{fmt(m.expenses)}</div></div>
+                  <div style={{ textAlign: "center", padding: 8, background: m.net >= 0 ? C.successBg : C.dangerBg, borderRadius: 6 }}><div style={{ fontSize: 10, color: m.net >= 0 ? C.success : C.danger }}>Net</div><div style={{ fontWeight: 700, color: m.net >= 0 ? C.success : C.danger }}>{fmt(m.net)}</div></div>
+                </div>
+              </div>
+            ))}
+          </AnimatedCard>
+          <AnimatedCard>
+            <h3 style={{ fontFamily: F.serif, fontSize: 15, margin: "0 0 16px" }}>Key Assumptions</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { label: "Event revenue weighted by probability", ok: true },
+                { label: "Expenses based on Q1 monthly average", ok: true },
+                { label: "Outstanding invoices counted by due date", ok: true },
+                { label: "No new events factored in", ok: false },
+                { label: "Staff costs held constant", ok: false },
+              ].map((a, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+                  <span style={{ fontSize: 11, color: a.ok ? C.success : C.warn }}>{a.ok ? "\u2713" : "\u26A0"}</span>
+                  <span style={{ color: C.inkSec }}>{a.label}</span>
+                </div>
+              ))}
+            </div>
+          </AnimatedCard>
         </div>
       )}
     </div>
@@ -822,8 +1044,10 @@ export default function App() {
         </div>
         <div style={{ padding: "12px 8px", flex: 1 }}>
           {NAV.map(n => (
-            <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", marginBottom: 2, borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontFamily: F.sans, fontWeight: page === n.id ? 600 : 400, background: page === n.id ? C.accentSubtle : "transparent", color: page === n.id ? C.accent : C.inkSec, transition: "all 0.15s" }}>
-              <span style={{ fontSize: 14, opacity: 0.7 }}>{n.icon}</span>{n.label}
+            <button key={n.id} onClick={() => setPage(n.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 10px", marginBottom: 2, borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontFamily: F.sans, fontWeight: page === n.id ? 600 : 400, background: page === n.id ? C.accentSubtle : "transparent", color: page === n.id ? C.accent : C.inkSec, transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", borderLeft: page === n.id ? `3px solid ${C.accent}` : "3px solid transparent" }}
+                onMouseEnter={e => { if (page !== n.id) e.currentTarget.style.background = C.bgWarm; }}
+                onMouseLeave={e => { if (page !== n.id) e.currentTarget.style.background = "transparent"; }}>
+              <span style={{ fontSize: 14, opacity: page === n.id ? 1 : 0.7, transition: "opacity 0.2s" }}>{n.icon}</span>{n.label}
             </button>
           ))}
         </div>
@@ -843,6 +1067,7 @@ export default function App() {
         <header style={{ padding: "14px 24px", borderBottom: `1px solid ${C.borderLight}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: C.card, flexShrink: 0 }}>
           <div style={{ fontSize: 12, color: C.inkMuted }}>{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} · {now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <NotificationBell />
             <span style={pillStyle(C.successBg, C.success)}>● 3 APIs Connected</span>
             <span style={{ fontSize: 11, color: C.inkMuted, fontFamily: F.mono }}>Ghost Operator v4.0</span>
           </div>

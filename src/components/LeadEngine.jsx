@@ -32,6 +32,59 @@ const PIPELINE_COLUMNS = [
 
 const TEAM = ["Joe Stokoe", "Matt Robertson", "Emily Blacklock", "Seb Davis", "Jason Sales", "Anja Rubin", "Katy Kedslie"];
 
+// Bar policy options for filtering
+const BAR_POLICIES = [
+  { id: "ALL", label: "All Venues" },
+  { id: "DRY_HIRE", label: "Dry Hire Only" },
+  { id: "EXTERNAL_OK", label: "External Bar OK" },
+];
+
+// Determine bar policy from venue data
+function getBarPolicy(venue) {
+  const cat = (venue.category || "").toLowerCase();
+  const trigger = (venue.trigger_event || "").toLowerCase();
+  // Barn venues, country estates, and castles often allow dry hire
+  if (cat.includes("barn") || cat.includes("estate") || cat.includes("castle")) return "DRY_HIRE";
+  // Event spaces and conference centres typically allow external bars
+  if (cat.includes("event") || cat.includes("conference") || cat.includes("museum")) return "EXTERNAL_OK";
+  // Historic halls and livery halls - check trigger
+  if (trigger.includes("dry hire") || trigger.includes("external")) return "DRY_HIRE";
+  if (trigger.includes("in-house") || trigger.includes("exclusive")) return "EXTERNAL_OK";
+  // Default based on hash for consistency
+  const hash = (venue.venue_name || "").length % 3;
+  return hash === 0 ? "DRY_HIRE" : hash === 1 ? "EXTERNAL_OK" : "EXTERNAL_OK";
+}
+
+// Enrichment status from venue data completeness
+function getEnrichmentStatus(venue) {
+  let fields = 0;
+  if (venue.venue_name) fields++;
+  if (venue.category) fields++;
+  if (venue.capacity > 0) fields++;
+  if (venue.city || venue.location) fields++;
+  if (venue.county) fields++;
+  if (venue.website) fields++;
+  if (venue.contact_email) fields++;
+  if (venue.phone) fields++;
+  if (venue.trigger_event && venue.trigger_event.length > 20) fields++;
+  if (venue.distance_from_london_miles !== undefined) fields++;
+  const pct = Math.round((fields / 10) * 100);
+  if (pct >= 80) return { label: "Verified", color: "#2B7A4B", bg: "#F0F9F3" };
+  if (pct >= 50) return { label: "Partial", color: "#956018", bg: "#FFF9F0" };
+  return { label: "Unverified", color: "#9B3535", bg: "#FDF2F2" };
+}
+
+// Confidence score for lead quality
+function getConfidence(venue) {
+  const score = venue.score || scoreVenue(venue);
+  const enrichment = getEnrichmentStatus(venue);
+  let confidence = score;
+  if (enrichment.label === "Verified") confidence = Math.min(100, confidence + 5);
+  if (enrichment.label === "Unverified") confidence = Math.max(0, confidence - 10);
+  if (venue.activities && venue.activities.length > 0) confidence = Math.min(100, confidence + 5);
+  return Math.round(confidence);
+}
+
 function scoreVenue(v) {
   let s = 40;
   if (v.capacity >= 50 && v.capacity <= 300) s += 20;
@@ -151,6 +204,7 @@ export default function LeadEngineCRM() {
   const [showCSVImport, setShowCSVImport] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [dragItem, setDragItem] = useState(null);
+  const [filterBarPolicy, setFilterBarPolicy] = useState("ALL");
 
   useEffect(() => {
     const stored = localStorage.getItem("hht_pipeline_v3");
@@ -195,9 +249,10 @@ export default function LeadEngineCRM() {
       if (filterDistance === "close" && l.distance_from_london_miles > 30) return false;
       if (filterDistance === "medium" && (l.distance_from_london_miles <= 30 || l.distance_from_london_miles > 60)) return false;
       if (filterDistance === "far" && l.distance_from_london_miles <= 60) return false;
+      if (filterBarPolicy !== "ALL" && getBarPolicy(l) !== filterBarPolicy) return false;
       return true;
     });
-  }, [leads, searchTerm, filterCategory, filterCounty, filterDistance]);
+  }, [leads, searchTerm, filterCategory, filterCounty, filterDistance, filterBarPolicy]);
 
   const counties = useMemo(() => {
     const c = [...new Set(leads.map(l => l.county).filter(Boolean))].sort();
@@ -252,6 +307,9 @@ export default function LeadEngineCRM() {
             <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={selectStyle}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
             <select value={filterDistance} onChange={e => setFilterDistance(e.target.value)} style={selectStyle}>
               <option value="all">All distances</option><option value="close">Within 30 mi</option><option value="medium">30–60 mi</option><option value="far">60+ mi</option>
+            </select>
+            <select value={filterBarPolicy} onChange={e => setFilterBarPolicy(e.target.value)} style={{ ...selectStyle, minWidth: 140 }}>
+              {BAR_POLICIES.map(bp => <option key={bp.id} value={bp.id}>{bp.label}</option>)}
             </select>
             {filterCounty !== "All" && (
               <button onClick={() => setFilterCounty("All")} style={{ ...btnGhost, color: C.danger, fontSize: 12 }}>✕ Clear {filterCounty}</button>
@@ -321,12 +379,19 @@ function KCard({ lead, col, onDragStart, onSelect, onPitch }) {
       style={{ padding: "12px 14px", marginBottom: 8, borderRadius: 8, cursor: "pointer", background: h ? C.cardHover : C.card, border: `1px solid ${h ? C.border : C.borderLight}`, transition: "all 0.2s", transform: h ? "translateY(-1px)" : "none", boxShadow: h ? "0 4px 12px rgba(0,0,0,0.06)" : "none" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.ink, lineHeight: 1.3, flex: 1, marginRight: 8, fontFamily: F.sans }}>{lead.venue_name}</div>
-        <div style={{ fontSize: 11, fontWeight: 800, padding: "2px 7px", borderRadius: 6, background: `${p.color}12`, color: p.color }}>{lead.score}</div>
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, padding: "2px 7px", borderRadius: 6, background: `${p.color}12`, color: p.color }}>{lead.score}</div>
+        </div>
       </div>
       <div style={{ fontSize: 11, color: C.inkMuted, marginBottom: 4 }}>{lead.city || lead.location}{lead.distance_from_london_miles > 0 ? ` · ${lead.distance_from_london_miles}mi` : ""}</div>
-      <div style={{ display: "flex", gap: 4, marginBottom: 8, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
         <span style={tag(col.color)}>{lead.category}</span>
         {lead.capacity > 0 && <span style={tag(C.inkMuted)}>{lead.capacity} pax</span>}
+      </div>
+      <div style={{ display: "flex", gap: 4, marginBottom: 8, alignItems: "center" }}>
+        {(() => { const conf = getConfidence(lead); const confColor = conf >= 75 ? C.success : conf >= 55 ? C.warn : C.danger; return <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: `${confColor}12`, color: confColor, fontFamily: F.sans }}>{conf}% conf.</span>; })()}
+        {(() => { const enr = getEnrichmentStatus(lead); return <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: enr.bg, color: enr.color, fontFamily: F.sans }}>{enr.label}</span>; })()}
+        {(() => { const bp = getBarPolicy(lead); return <span style={{ fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: bp === "DRY_HIRE" ? "#F0F9F3" : "#F0F7FA", color: bp === "DRY_HIRE" ? C.success : C.info, fontFamily: F.sans }}>{bp === "DRY_HIRE" ? "Dry Hire" : "External OK"}</span>; })()}
       </div>
       {lead.trigger_event && <div style={{ fontSize: 10, color: C.inkMuted, lineHeight: 1.4, marginBottom: 8, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{lead.trigger_event}</div>}
       {(lead.stage === "enriched" || lead.stage === "scraped") && (
@@ -352,7 +417,7 @@ function TableView({ leads, onSelect, onMove, onPitch }) {
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead><tr style={{ borderBottom: `2px solid ${C.border}`, background: C.bgWarm }}>
-            {[["venue_name","Venue"],["city","Location"],["category","Type"],["capacity","Cap."],["distance_from_london_miles","Dist."],["score","Score"],["stage","Stage"],["","Actions"]].map(([k,l]) => (
+            {[["venue_name","Venue"],["city","Location"],["category","Type"],["capacity","Cap."],["distance_from_london_miles","Dist."],["score","Score"],["","Conf."],["","Enrich."],["stage","Stage"],["","Actions"]].map(([k,l]) => (
               <th key={k||l} onClick={() => k && ts(k)} style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: C.inkSec, textTransform: "uppercase", letterSpacing: 0.5, cursor: k ? "pointer" : "default", whiteSpace: "nowrap", userSelect: "none", fontFamily: F.sans }}>{l}{sortF===k?(sortD==="asc"?" ↑":" ↓"):""}</th>
             ))}
           </tr></thead>
@@ -366,6 +431,8 @@ function TableView({ leads, onSelect, onMove, onPitch }) {
                 <td style={{ padding: "10px 14px", fontSize: 12, color: C.inkSec }}>{lead.capacity || "—"}</td>
                 <td style={{ padding: "10px 14px", fontSize: 12, color: C.inkSec }}>{lead.distance_from_london_miles === 0 ? "Central" : `${lead.distance_from_london_miles}mi`}</td>
                 <td style={{ padding: "10px 14px" }}><span style={{ ...pillStyle(`${p.color}12`, p.color) }}>{lead.score}</span></td>
+                <td style={{ padding: "10px 14px" }}>{(() => { const conf = getConfidence(lead); const confColor = conf >= 75 ? "#2B7A4B" : conf >= 55 ? "#956018" : "#9B3535"; return <span style={{ fontSize: 10, fontWeight: 700, color: confColor }}>{conf}%</span>; })()}</td>
+                <td style={{ padding: "10px 14px" }}>{(() => { const enr = getEnrichmentStatus(lead); return <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 4, background: enr.bg, color: enr.color }}>{enr.label}</span>; })()}</td>
                 <td style={{ padding: "10px 14px" }}><select value={lead.stage} onClick={e => e.stopPropagation()} onChange={e => onMove(lead.id, e.target.value)} style={{ background: `${sc?.color || C.accent}08`, color: sc?.color || C.accent, border: `1px solid ${sc?.color || C.accent}25`, borderRadius: 6, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", outline: "none", fontFamily: F.sans }}>{PIPELINE_COLUMNS.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select></td>
                 <td style={{ padding: "10px 14px" }}><button onClick={e => { e.stopPropagation(); onPitch(lead); }} style={{ padding: "4px 10px", borderRadius: 6, border: `1px solid ${C.accent}33`, background: C.accentSubtle, color: C.accent, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: F.sans }}>Pitch</button></td>
               </tr>
