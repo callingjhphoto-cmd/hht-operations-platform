@@ -133,22 +133,34 @@ aggrScale = switch dcaAggression
 
 float dcaMultiplier = 0.0
 
+// ATH-distance multiplier table (from rhettre GitHub gist — community reverse-engineering)
+// This maps distance-from-ATH to a buy multiplier:
+//   0-10%  below ATH = 0.5x (near ATH, small buys)
+//   10-20% below ATH = 0.75x
+//   20-30% below ATH = 1.0x (standard DCA)
+//   30-35% below ATH = 1.33x
+//   35-40% below ATH = 1.66x (confirmed from gist)
+//   40-45% below ATH = 2.64x (confirmed from gist)
+//   45-50% below ATH = 4.26x (confirmed from gist — but we cap at 3.19x per IA examples)
+//   50%+   below ATH = 2.00x (confirmed — reduced because extreme fear = caution)
+athMultiplier = athDist >= 50 ? 2.00 :
+                athDist >= 45 ? 3.19 :
+                athDist >= 40 ? 2.64 :
+                athDist >= 35 ? 1.66 :
+                athDist >= 30 ? 1.33 :
+                athDist >= 20 ? 1.00 :
+                athDist >= 10 ? 0.75 :
+                0.50
+
 if redState
     dcaMultiplier := 0.0
 else if aboveLine and greenState
-    // Nibble: 0.5x base, slightly more if just above line
-    nibbleBase = 0.5
-    nibbleBonus = math.max(0, 1.0 - distFromBasisUp / 25) * 0.5  // Less if far above
-    dcaMultiplier := (nibbleBase + nibbleBonus) * aggrScale
+    // Nibble: use ATH multiplier but scaled down (above line = less aggressive)
+    dcaMultiplier := math.min(athMultiplier * 0.5, 1.0) * aggrScale
 else if belowLine and greenState
-    // Amplify: 1.0x base + bonus for depth of discount
-    // Scale by distance from basis (deeper = more)
-    amplifyBase = 1.0
-    // ATH distance bonus (further from ATH = buy more, per rhettre gist)
-    athBonus = math.min(athDist / 50.0, 1.0)  // Cap at 1.0x from ATH distance
-    // Range position bonus (deeper in range = buy more)
-    depthBonus = math.min(distFromBasis / 30.0, 1.0)  // Cap at 1.0x from depth
-    dcaMultiplier := math.min((amplifyBase + athBonus + depthBonus) * aggrScale, 3.0)
+    // Amplify: full ATH multiplier + depth bonus
+    depthBonus = math.min(distFromBasis / 40.0, 0.5)
+    dcaMultiplier := math.min(athMultiplier + depthBonus, 3.19) * aggrScale
 
 // Dollar amount to buy this period
 dcaDollarAmount = dcaBudget * dcaMultiplier

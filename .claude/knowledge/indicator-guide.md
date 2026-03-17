@@ -127,6 +127,37 @@
 3. Multi-Market Dashboard (quick earnings/event assessment)
 4. TD Sequential 9 (timing entries at exhaustion)
 
+## Indicator Expansion Pipeline (Iterations 7-8 Discovery)
+
+### Tier 1 -- Implement Immediately (Critical Gaps)
+| Indicator | Gap Filled | Markets | Source |
+|-----------|-----------|---------|--------|
+| Cumulative Volume Delta | Volume/Order Flow | All | Pine v6 native |
+| Smart Money Concepts (BOS/CHoCH/FVG) | Market Structure | All | LuxAlgo open-source |
+| Volatility Regime Classifier | Regime Detection | All | k-means clustering |
+| COT Positioning Index | Commodities Positioning | WTI/Commodities | TradingView LibraryCOT |
+| Contango/Backwardation Monitor | Futures Term Structure | WTI | twingall open-source |
+
+### Tier 2 -- Implement Next (High Value-Add)
+| Indicator | Gap Filled | Markets | Source |
+|-----------|-----------|---------|--------|
+| Nadaraya-Watson Envelope | ML Envelopes/Mean-Reversion | All | LuxAlgo open-source |
+| Ehlers MAMA/FAMA | Adaptive Cycle Analysis | All | MESA Software / DasanC |
+| Supply & Demand Zones | Auto Zone Detection | All | BigBeluga/AlgoAlpha |
+| Anchored VWAP | Volume-Weighted Levels | All | Community scripts |
+| Liquidation Heatmap | Crypto Leverage Clusters | Crypto | Alien_Algorithms |
+
+### Tier 3 -- When Resources Allow
+| Indicator | Gap Filled | Markets |
+|-----------|-----------|---------|
+| Funding Rate + OI Composite | Crypto Derivatives | Crypto |
+| Volume Profile | Volume Distribution | All |
+| Fear & Greed On-Chain Proxy | Crypto Sentiment | Crypto |
+| Twin Range Filter | Alternative Trend | All |
+| Seasonal Patterns | Time-Based Analysis | WTI/BTC |
+
+Full research: `.claude/research/indicator-discovery-iterations-7-8.md`
+
 ## Open Source Resources for Continuous Improvement
 
 ### Python Libraries (for backtesting)

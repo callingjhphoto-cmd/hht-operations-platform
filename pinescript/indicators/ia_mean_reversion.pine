@@ -26,7 +26,14 @@ src      = input.source(close, "Source", group="Mean Reversion")
 sdMult1  = input.float(1.0, "Band 1 (StdDev)", minval=0.5, step=0.25, group="Bands")
 sdMult2  = input.float(2.0, "Band 2 (StdDev)", minval=1.0, step=0.25, group="Bands")
 sdMult3  = input.float(3.0, "Band 3 (Extreme)", minval=1.5, step=0.25, group="Bands")
+noiseSuppression = input.int(30, "Noise Suppression", minval=5, maxval=100, group="Mean Reversion",
+                   tooltip="Default ~30 per IA documentation. Higher = fewer signals, lower = more signals.")
 smooth   = input.int(3, "Signal Smoothing", minval=1, maxval=10, group="Mean Reversion")
+// Entry methodology: IA recommends "30% double-tap" — buy twice at 30% each
+// Exit: LIFO at 30% increments
+entryStyle = input.string("Standard", "Entry Style",
+             options=["Standard", "30% Double-Tap (IA)"], group="Mean Reversion",
+             tooltip="30% Double-Tap: IA's recommended entry — two buys at 30% position each")
 
 // ═══════════════════════════════════════════════════
 // OSCILLATOR CALCULATION
@@ -36,7 +43,9 @@ smooth   = input.int(3, "Signal Smoothing", minval=1, maxval=10, group="Mean Rev
 mean     = ta.sma(src, srcLen)
 sd       = ta.stdev(src, srcLen)
 zScore   = sd > 0 ? (src - mean) / sd : 0
-zSmooth  = ta.ema(zScore, smooth)
+// Apply noise suppression (higher value = more smoothing = fewer false signals)
+noiseFactor = math.max(1, math.round(noiseSuppression / 10))
+zSmooth  = ta.ema(zScore, smooth * noiseFactor)
 
 // ═══════════════════════════════════════════════════
 // ZONE DETECTION
