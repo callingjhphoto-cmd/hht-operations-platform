@@ -1,0 +1,135 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// IA Mean Reversion Model — Part of IADSS (InvestAnswers Decision Support System)
+// Based on research: Uses standard deviation bands with directional dot signals
+// Claimed 90.7% win rate by James Mullarney (backtested)
+//
+// RESEARCH FINDINGS:
+// - Plots red and green dots when the indicator turns in opposite direction
+//   within the red/green zones (outside standard deviation bands)
+// - At 2.0+ standard deviations = high conviction signal
+// - Works across every asset class and every timeframe
+// - Third-party assessment: "any common oscillator with ranges for OB/OS areas"
+//   but enhanced with directional reversal detection within extreme zones
+//
+// ACCURACY vs REAL: ~7/10 (we know the core concept; exact smoothing unknown)
+
+//@version=5
+indicator("IA Mean Reversion Model", shorttitle="IA-MR", overlay=false)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+srcLen   = input.int(20, "Lookback Length", minval=5, group="Mean Reversion")
+src      = input.source(close, "Source", group="Mean Reversion")
+sdMult1  = input.float(1.0, "Band 1 (StdDev)", minval=0.5, step=0.25, group="Bands")
+sdMult2  = input.float(2.0, "Band 2 (StdDev)", minval=1.0, step=0.25, group="Bands")
+sdMult3  = input.float(3.0, "Band 3 (Extreme)", minval=1.5, step=0.25, group="Bands")
+smooth   = input.int(3, "Signal Smoothing", minval=1, maxval=10, group="Mean Reversion")
+
+// ═══════════════════════════════════════════════════
+// OSCILLATOR CALCULATION
+// ═══════════════════════════════════════════════════
+
+// Normalize price position relative to its own standard deviation
+mean     = ta.sma(src, srcLen)
+sd       = ta.stdev(src, srcLen)
+zScore   = sd > 0 ? (src - mean) / sd : 0
+zSmooth  = ta.ema(zScore, smooth)
+
+// ═══════════════════════════════════════════════════
+// ZONE DETECTION
+// ═══════════════════════════════════════════════════
+
+// Green zones (oversold — below negative SD bands)
+greenZone1 = zSmooth < -sdMult1 and zSmooth >= -sdMult2  // Mildly oversold
+greenZone2 = zSmooth < -sdMult2 and zSmooth >= -sdMult3  // Oversold
+greenZone3 = zSmooth < -sdMult3                           // Extremely oversold
+
+// Red zones (overbought — above positive SD bands)
+redZone1   = zSmooth > sdMult1 and zSmooth <= sdMult2    // Mildly overbought
+redZone2   = zSmooth > sdMult2 and zSmooth <= sdMult3    // Overbought
+redZone3   = zSmooth > sdMult3                            // Extremely overbought
+
+// Neutral zone
+neutralZone = zSmooth >= -sdMult1 and zSmooth <= sdMult1
+
+// ═══════════════════════════════════════════════════
+// REVERSAL DOT SIGNALS (Key IA Innovation)
+// ═══════════════════════════════════════════════════
+
+// "Red and green dots when the indicator turns in opposite direction
+//  within red/green zones"
+// Green dot = in oversold zone AND turning UP (reversal from oversold)
+// Red dot = in overbought zone AND turning DOWN (reversal from overbought)
+
+turningUp   = zSmooth > zSmooth[1] and zSmooth[1] <= zSmooth[2]
+turningDown = zSmooth < zSmooth[1] and zSmooth[1] >= zSmooth[2]
+
+greenDot    = (greenZone1 or greenZone2 or greenZone3) and turningUp
+redDot      = (redZone1 or redZone2 or redZone3) and turningDown
+
+// Signal strength based on how extreme the zone
+greenStrength = greenZone3 ? 3 : greenZone2 ? 2 : greenZone1 ? 1 : 0
+redStrength   = redZone3 ? 3 : redZone2 ? 2 : redZone1 ? 1 : 0
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Z-Score oscillator
+oscColor = zSmooth > sdMult2  ? color.new(#FF1744, 0) :
+           zSmooth > sdMult1  ? color.new(#FF8A80, 0) :
+           zSmooth < -sdMult2 ? color.new(#00E676, 0) :
+           zSmooth < -sdMult1 ? color.new(#69F0AE, 0) :
+           color.new(#BDBDBD, 30)
+
+plot(zSmooth, "Z-Score", oscColor, linewidth=2)
+
+// SD bands
+hline(0, "Mean", color.new(#FFFFFF, 70), hline.style_solid)
+h1p = hline(sdMult1, "+1 SD", color.new(#FF8A80, 70), hline.style_dashed)
+h1n = hline(-sdMult1, "-1 SD", color.new(#69F0AE, 70), hline.style_dashed)
+h2p = hline(sdMult2, "+2 SD", color.new(#FF1744, 50), hline.style_dashed)
+h2n = hline(-sdMult2, "-2 SD", color.new(#00E676, 50), hline.style_dashed)
+h3p = hline(sdMult3, "+3 SD", color.new(#D50000, 30), hline.style_dotted)
+h3n = hline(-sdMult3, "-3 SD", color.new(#00C853, 30), hline.style_dotted)
+
+// Zone fills
+fill(h1p, h2p, color.new(#FF1744, 92), title="Overbought Zone 1")
+fill(h2p, h3p, color.new(#FF1744, 85), title="Overbought Zone 2")
+fill(h1n, h2n, color.new(#00E676, 92), title="Oversold Zone 1")
+fill(h2n, h3n, color.new(#00E676, 85), title="Oversold Zone 2")
+
+// Reversal dots — THE key signal
+plotshape(greenDot and greenStrength >= 2, "Strong Green Dot",
+          shape.circle, location.bottom, color.new(#00C853, 0), size=size.normal)
+plotshape(greenDot and greenStrength == 1, "Mild Green Dot",
+          shape.circle, location.bottom, color.new(#69F0AE, 0), size=size.small)
+
+plotshape(redDot and redStrength >= 2, "Strong Red Dot",
+          shape.circle, location.top, color.new(#D50000, 0), size=size.normal)
+plotshape(redDot and redStrength == 1, "Mild Red Dot",
+          shape.circle, location.top, color.new(#FF8A80, 0), size=size.small)
+
+// Background for extreme zones
+bgcolor(greenZone3 ? color.new(#00E676, 88) :
+        greenZone2 ? color.new(#00E676, 93) :
+        redZone3   ? color.new(#FF1744, 88) :
+        redZone2   ? color.new(#FF1744, 93) : na)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(greenDot and greenStrength >= 2, "Strong Buy Reversal",
+               "Mean Reversion: Strong GREEN DOT — oversold reversal at 2+ SD. High conviction buy.")
+alertcondition(redDot and redStrength >= 2, "Strong Sell Reversal",
+               "Mean Reversion: Strong RED DOT — overbought reversal at 2+ SD. High conviction sell/short.")
+alertcondition(greenDot, "Any Green Dot",
+               "Mean Reversion: Green dot — turning up in oversold zone")
+alertcondition(redDot, "Any Red Dot",
+               "Mean Reversion: Red dot — turning down in overbought zone")
+alertcondition(zSmooth > sdMult3 or zSmooth < -sdMult3, "Extreme Zone",
+               "Mean Reversion: Price at 3+ standard deviations — extreme territory")
