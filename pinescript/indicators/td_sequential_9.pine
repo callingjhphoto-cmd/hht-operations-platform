@@ -1,0 +1,204 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// TD Sequential (TD9) - Based on Tom DeMark's methodology
+// Used in Trading Alpha's TD9 system for overbought/oversold timing
+// IMPORTANT: Use privately only — do not publish on TradingView (DeMark trademark)
+
+//@version=5
+indicator("TD Sequential 9", shorttitle="TD9", overlay=true, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+lookback     = input.int(4, "Comparison Lookback", minval=1, group="TD Sequential")
+showSetup    = input.bool(true, "Show Setup Counts (1-9)", group="Display")
+showOnly9    = input.bool(false, "Show Only 9 Counts", group="Display")
+showCountdown= input.bool(true, "Show Countdown Phase", group="Display")
+showPerfect  = input.bool(true, "Highlight Perfected Setups", group="Display")
+labelSize    = input.string("small", "Label Size", options=["tiny", "small", "normal"], group="Display")
+
+// ═══════════════════════════════════════════════════
+// TD SETUP PHASE
+// ═══════════════════════════════════════════════════
+
+// Buy Setup: 9 consecutive closes LESS than the close 4 bars earlier
+// Sell Setup: 9 consecutive closes GREATER than the close 4 bars earlier
+
+buySetup  = close < close[lookback]
+sellSetup = close > close[lookback]
+
+// Count consecutive setup bars
+var int buyCount  = 0
+var int sellCount = 0
+
+if buySetup
+    buyCount  := buyCount + 1
+    sellCount := 0
+else if sellSetup
+    sellCount := sellCount + 1
+    buyCount  := 0
+else
+    buyCount  := 0
+    sellCount := 0
+
+// Setup completed at 9
+buySetup9  = buyCount == 9
+sellSetup9 = sellCount == 9
+
+// ═══════════════════════════════════════════════════
+// TD COUNTDOWN PHASE (after setup completes)
+// ═══════════════════════════════════════════════════
+
+var int buyCountdown  = 0
+var int sellCountdown = 0
+var bool inBuyCountdown  = false
+var bool inSellCountdown = false
+
+// Start countdown after setup 9
+if buySetup9
+    inBuyCountdown  := true
+    buyCountdown    := 0
+    inSellCountdown := false
+    sellCountdown   := 0
+
+if sellSetup9
+    inSellCountdown := true
+    sellCountdown   := 0
+    inBuyCountdown  := false
+    buyCountdown    := 0
+
+// Buy countdown: count bars where close <= low 2 bars ago
+if inBuyCountdown
+    if close <= low[2]
+        buyCountdown := buyCountdown + 1
+    if buyCountdown >= 13
+        inBuyCountdown := false
+
+// Sell countdown: count bars where close >= high 2 bars ago
+if inSellCountdown
+    if close >= high[2]
+        sellCountdown := sellCountdown + 1
+    if sellCountdown >= 13
+        inSellCountdown := false
+
+// Cancel countdown on opposite setup
+if sellSetup9 and inBuyCountdown
+    inBuyCountdown := false
+    buyCountdown   := 0
+if buySetup9 and inSellCountdown
+    inSellCountdown := false
+    sellCountdown   := 0
+
+buyCountdown13  = buyCountdown == 13
+sellCountdown13 = sellCountdown == 13
+
+// ═══════════════════════════════════════════════════
+// PERFECTED SETUP DETECTION
+// ═══════════════════════════════════════════════════
+
+// A buy setup is "perfected" when bar 8 or 9's low is below bar 6 AND 7's low
+// A sell setup is "perfected" when bar 8 or 9's high is above bar 6 AND 7's high
+
+var bool perfectedBuy  = false
+var bool perfectedSell = false
+
+if buyCount == 9
+    perfectedBuy := low <= low[2] and low <= low[3]  // bar 9 low < bar 7 & 6 lows
+    if not perfectedBuy and buyCount >= 8
+        perfectedBuy := low[1] <= low[3] and low[1] <= low[4]  // bar 8 low < bar 6 & 5 lows
+
+if sellCount == 9
+    perfectedSell := high >= high[2] and high >= high[3]
+    if not perfectedSell and sellCount >= 8
+        perfectedSell := high[1] >= high[3] and high[1] >= high[4]
+
+// ═══════════════════════════════════════════════════
+// LABEL SIZE HELPER
+// ═══════════════════════════════════════════════════
+
+sz = switch labelSize
+    "tiny"   => size.tiny
+    "small"  => size.small
+    "normal" => size.normal
+    => size.small
+
+// ═══════════════════════════════════════════════════
+// PLOT SETUP COUNTS
+// ═══════════════════════════════════════════════════
+
+// Buy setup labels (below candles, green)
+if showSetup and buyCount >= 1 and buyCount <= 9
+    if buyCount == 9
+        lbl = label.new(bar_index, low, "9",
+                        color=perfectedBuy and showPerfect ? color.new(#00C853, 0) : color.new(#00E676, 0),
+                        textcolor=color.white,
+                        style=label.style_label_up, size=sz)
+        if perfectedBuy and showPerfect
+            label.set_text(lbl, "9✓")
+    else if not showOnly9
+        label.new(bar_index, low, str.tostring(buyCount),
+                  color=color.new(#00E676, 60),
+                  textcolor=color.white,
+                  style=label.style_label_up, size=size.tiny)
+
+// Sell setup labels (above candles, red)
+if showSetup and sellCount >= 1 and sellCount <= 9
+    if sellCount == 9
+        lbl = label.new(bar_index, high, "9",
+                        color=perfectedSell and showPerfect ? color.new(#C62828, 0) : color.new(#FF1744, 0),
+                        textcolor=color.white,
+                        style=label.style_label_down, size=sz)
+        if perfectedSell and showPerfect
+            label.set_text(lbl, "9✓")
+    else if not showOnly9
+        label.new(bar_index, high, str.tostring(sellCount),
+                  color=color.new(#FF1744, 60),
+                  textcolor=color.white,
+                  style=label.style_label_down, size=size.tiny)
+
+// Countdown labels
+if showCountdown and inBuyCountdown and close <= low[2] and buyCountdown <= 13
+    label.new(bar_index, low, str.tostring(buyCountdown),
+              color=color.new(#00BCD4, 50),
+              textcolor=color.white,
+              style=label.style_label_up, size=size.tiny)
+
+if showCountdown and inSellCountdown and close >= high[2] and sellCountdown <= 13
+    label.new(bar_index, high, str.tostring(sellCountdown),
+              color=color.new(#E040FB, 50),
+              textcolor=color.white,
+              style=label.style_label_down, size=size.tiny)
+
+// Countdown 13 completion
+if buyCountdown13
+    label.new(bar_index, low, "13",
+              color=color.new(#00BCD4, 0),
+              textcolor=color.white,
+              style=label.style_label_up, size=sz)
+
+if sellCountdown13
+    label.new(bar_index, high, "13",
+              color=color.new(#E040FB, 0),
+              textcolor=color.white,
+              style=label.style_label_down, size=sz)
+
+// ═══════════════════════════════════════════════════
+// BACKGROUND HIGHLIGHTS
+// ═══════════════════════════════════════════════════
+
+bgcolor(buySetup9  ? color.new(#00E676, 85) : na, title="Buy 9 Background")
+bgcolor(sellSetup9 ? color.new(#FF1744, 85) : na, title="Sell 9 Background")
+bgcolor(buyCountdown13  ? color.new(#00BCD4, 85) : na, title="Buy 13 Background")
+bgcolor(sellCountdown13 ? color.new(#E040FB, 85) : na, title="Sell 13 Background")
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(buySetup9, "Buy Setup 9", "TD Sequential Buy Setup 9 — potential exhaustion low")
+alertcondition(sellSetup9, "Sell Setup 9", "TD Sequential Sell Setup 9 — potential exhaustion high")
+alertcondition(buySetup9 and perfectedBuy, "Perfected Buy 9", "Perfected Buy Setup 9 — high confidence exhaustion")
+alertcondition(sellSetup9 and perfectedSell, "Perfected Sell 9", "Perfected Sell Setup 9 — high confidence exhaustion")
+alertcondition(buyCountdown13, "Buy Countdown 13", "TD Sequential Buy Countdown 13 — trend exhaustion confirmed")
+alertcondition(sellCountdown13, "Sell Countdown 13", "TD Sequential Sell Countdown 13 — trend exhaustion confirmed")

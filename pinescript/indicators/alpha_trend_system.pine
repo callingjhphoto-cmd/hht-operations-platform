@@ -1,0 +1,310 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Alpha Trend System v2 — Corrected from exhaustive Trading Alpha research
+//
+// RESEARCH-BASED CORRECTIONS (5/10 → 7/10):
+// - Added Reversal Candles "R" with confirmation technique (MOST POPULAR signal)
+// - Added Topping "T" (orange) and Bottoming "B" (blue) signals
+// - Added Alpha Track (VMA/Chande Variable Moving Average) with 3 intensities
+// - Fixed Micro Dots to be CONTINUOUS (not flip-only)
+// - Added Strength/Weakness arrows
+// - Proper color states: green, red, orange(topping), blue(bottoming),
+//   yellow(reversal-from-up), turquoise(reversal-from-down)
+//
+// COMMUNITY INTEL: Alpha Trend macro bars likely based on modified SuperTrend/
+// KivancOzbilgic AlphaTrend. Alpha Track likely LazyBear's VMA (Chande).
+
+//@version=5
+indicator("Alpha Trend System v2", shorttitle="ATS2", overlay=true, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+macroLength  = input.int(200, "Macro MA Length", minval=1, group="Macro Trend")
+microLength  = input.int(21, "Micro MA Length", minval=1, group="Micro Trend")
+midLength    = input.int(55, "Mid MA Length", minval=1, group="Mid Trend")
+
+atrLength    = input.int(14, "ATR Length", minval=1, group="ATR Trailing Stop")
+atrMult      = input.float(1.0, "ATR Multiplier", minval=0.1, step=0.1, group="ATR Trailing Stop")
+useMFI       = input.bool(true, "Use MFI (uncheck for no-volume)", group="Momentum")
+mfiLength    = input.int(14, "MFI/RSI Length", minval=1, group="Momentum")
+
+// Alpha Track (VMA) Settings
+showTrack    = input.bool(true, "Show Alpha Track", group="Alpha Track")
+trackIntensity = input.string("Medium", "Track Intensity",
+                 options=["Low", "Medium", "High"], group="Alpha Track",
+                 tooltip="Low = smoother/slower. High = more reactive.")
+trackLength  = input.int(14, "Track Lookback", minval=5, group="Alpha Track")
+
+// Display
+showMicro    = input.bool(true, "Show Micro Dots (continuous)", group="Display")
+showCloud    = input.bool(true, "Show Trend Cloud", group="Display")
+showTrail    = input.bool(true, "Show ATR Trail", group="Display")
+showReversals= input.bool(true, "Show Reversal R Candles", group="Display")
+showTB       = input.bool(true, "Show Topping T / Bottoming B", group="Display")
+showStrength = input.bool(true, "Show Strength/Weakness Arrows", group="Display")
+
+// ═══════════════════════════════════════════════════
+// MOVING AVERAGES
+// ═══════════════════════════════════════════════════
+
+macroMA = ta.ema(close, macroLength)
+midMA   = ta.ema(close, midLength)
+microMA = ta.ema(close, microLength)
+
+// ═══════════════════════════════════════════════════
+// ATR TRAILING STOP (AlphaTrend / KivancOzbilgic)
+// ═══════════════════════════════════════════════════
+
+atrVal = ta.atr(atrLength)
+momVal = useMFI ? ta.mfi(hlc3, mfiLength) : ta.rsi(close, mfiLength)
+
+var float alphaTrail = na
+upperTrail = low - atrVal * atrMult
+lowerTrail = high + atrVal * atrMult
+
+if momVal >= 50
+    alphaTrail := math.max(nz(alphaTrail[1]), upperTrail)
+else
+    alphaTrail := math.min(nz(alphaTrail[1]), lowerTrail)
+
+alphaTrail2 = alphaTrail[2]
+trailUp   = close > alphaTrail
+trailDown = close < alphaTrail
+
+// ═══════════════════════════════════════════════════
+// ALPHA TRACK — Variable Moving Average (Chande VMA)
+// ═══════════════════════════════════════════════════
+
+// LazyBear's VMA / Tushar Chande's VMA: dynamically adjusts smoothing
+// based on volatility using directional movement ratios
+trackPeriod = switch trackIntensity
+    "Low"    => trackLength * 2
+    "Medium" => trackLength
+    "High"   => math.max(5, math.round(trackLength * 0.6))
+    => trackLength
+
+// Chande VMA calculation
+pdm = math.max(close - close[1], 0)  // positive directional movement
+mdm = math.max(close[1] - close, 0)  // negative directional movement
+
+pdmS = ta.sma(pdm, trackPeriod)
+mdmS = ta.sma(mdm, trackPeriod)
+
+// Chande Momentum Oscillator as volatility index
+cmo = (pdmS + mdmS) != 0 ? math.abs((pdmS - mdmS) / (pdmS + mdmS)) : 0
+
+// VMA: EMA with dynamic smoothing factor based on CMO
+var float vma = na
+vma := na(vma[1]) ? close : nz(vma[1]) + cmo * (close - nz(vma[1]))
+
+// Track color: green = bullish, yellow = caution, red = bearish
+trackBull = close > vma and vma > vma[1]
+trackBear = close < vma and vma < vma[1]
+trackCaution = not trackBull and not trackBear
+
+trackColor = trackBull    ? color.new(#00E676, 20) :
+             trackBear    ? color.new(#FF1744, 20) :
+             color.new(#FFD600, 30)
+
+// ═══════════════════════════════════════════════════
+// TREND STATES
+// ═══════════════════════════════════════════════════
+
+macroUp   = close > macroMA
+macroDown = close < macroMA
+microUp   = close > microMA
+microDown = close < microMA
+
+trendScore = (macroUp ? 1 : macroDown ? -1 : 0) +
+             (close > midMA ? 1 : close < midMA ? -1 : 0) +
+             (microUp ? 1 : microDown ? -1 : 0) +
+             (trailUp ? 1 : trailDown ? -1 : 0)
+
+strongBull = trendScore >= 3
+strongBear = trendScore <= -3
+
+// ═══════════════════════════════════════════════════
+// REVERSAL CANDLES "R" (Trading Alpha's MOST POPULAR signal)
+// ═══════════════════════════════════════════════════
+
+// Reversal candle detection: significant directional change
+// Bullish reversal: bearish context + bullish engulfing/hammer pattern
+// Bearish reversal: bullish context + bearish engulfing/shooting star
+
+// Bullish reversal "R"
+bullReversal = microDown and (
+    (close > open and close > high[1] and open <= low[1]) or     // bullish engulfing
+    (close > open and (math.min(open, close) - low) > 2 * math.abs(close - open)) // hammer
+    ) and trailDown
+
+// Bearish reversal "R"
+bearReversal = microUp and (
+    (close < open and close < low[1] and open >= high[1]) or     // bearish engulfing
+    (close < open and (high - math.max(open, close)) > 2 * math.abs(close - open)) // shooting star
+    ) and trailUp
+
+// CONFIRMATION TECHNIQUE: next 1-2 bars must close above/below wick
+// We track reversal bars and check confirmation
+var bool pendingBullR = false
+var bool pendingBearR = false
+var float bullRWick = na
+var float bearRWick = na
+var int bullRBar = 0
+var int bearRBar = 0
+
+if bullReversal
+    pendingBullR := true
+    bullRWick    := high
+    bullRBar     := bar_index
+
+if bearReversal
+    pendingBearR := true
+    bearRWick    := low
+    bearRBar     := bar_index
+
+// Check confirmation within 2 bars
+confirmedBullR = pendingBullR and not bullReversal and close > bullRWick and (bar_index - bullRBar) <= 2
+confirmedBearR = pendingBearR and not bearReversal and close < bearRWick and (bar_index - bearRBar) <= 2
+
+if confirmedBullR or (bar_index - bullRBar) > 2
+    pendingBullR := false
+if confirmedBearR or (bar_index - bearRBar) > 2
+    pendingBearR := false
+
+// ═══════════════════════════════════════════════════
+// TOPPING "T" AND BOTTOMING "B" SIGNALS
+// ═══════════════════════════════════════════════════
+
+// Topping: extended uptrend + momentum exhaustion
+rsiVal = ta.rsi(close, 14)
+potentialTop = macroUp and microUp and (
+    (rsiVal > 70 and rsiVal < rsiVal[1] and rsiVal[1] < rsiVal[2]) or // RSI rolling over from OB
+    (high > high[1] and high > high[2] and close < open)               // new high but bearish close
+    )
+
+// Bottoming: extended downtrend + momentum recovery
+potentialBottom = macroDown and microDown and (
+    (rsiVal < 30 and rsiVal > rsiVal[1] and rsiVal[1] > rsiVal[2]) or // RSI turning from OS
+    (low < low[1] and low < low[2] and close > open)                   // new low but bullish close
+    )
+
+// ═══════════════════════════════════════════════════
+// STRENGTH / WEAKNESS ARROWS
+// ═══════════════════════════════════════════════════
+
+// Strength arrows: confirm you should STAY in the trend
+strengthBull = strongBull and close > close[1] and close[1] > close[2] and
+               volume > ta.sma(volume, 10) and trailUp
+strengthBear = strongBear and close < close[1] and close[1] < close[2] and
+               volume > ta.sma(volume, 10) and trailDown
+
+// Weakness arrows: warn that trend is fading
+weaknessBull = macroUp and microDown and trailDown and trendScore <= 0  // was bull, losing it
+weaknessBear = macroDown and microUp and trailUp and trendScore >= 0   // was bear, losing it
+
+// ═══════════════════════════════════════════════════
+// BAR COLORS (Trading Alpha 6-State System)
+// ═══════════════════════════════════════════════════
+
+// Green = uptrend, Red = downtrend, Orange = topping, Blue = bottoming
+// Yellow = reversal from uptrend, Turquoise = reversal from downtrend
+barCol = potentialTop     ? color.new(#FF6D00, 0) :  // orange = topping
+         potentialBottom  ? color.new(#2979FF, 0) :  // blue = bottoming
+         confirmedBullR   ? color.new(#00BCD4, 0) :  // turquoise = reversal from downtrend
+         confirmedBearR   ? color.new(#FFD600, 0) :  // yellow = reversal from uptrend
+         strongBull       ? color.new(#00E676, 0) :  // bright green
+         trendScore > 0   ? color.new(#B2FF59, 0) :  // light green
+         trendScore == 0  ? color.new(#BDBDBD, 0) :  // gray
+         trendScore > -3  ? color.new(#FF8A80, 0) :  // light red
+         color.new(#FF1744, 0)                        // bright red
+
+barcolor(barCol)
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+pMacro = plot(macroMA, "Macro MA", color.new(#FF6D00, 30), linewidth=3)
+pMid   = plot(midMA, "Mid MA", color.new(#2979FF, 30), linewidth=2)
+pMicro = plot(microMA, "Micro MA", color.new(#00E676, 50), linewidth=1)
+
+fill(pMicro, pMid,
+     microMA > midMA ? color.new(#00E676, 85) : color.new(#FF1744, 85),
+     title="Trend Cloud")
+
+// ATR Trail
+trailColor = trailUp ? color.new(#00E676, 20) : color.new(#FF1744, 20)
+plot(showTrail ? alphaTrail : na, "Alpha Trail", trailColor, linewidth=2, style=plot.style_stepline_diamond)
+
+// Alpha Track (VMA)
+plot(showTrack ? vma : na, "Alpha Track", trackColor, linewidth=3)
+
+// ═══════════════════════════════════════════════════
+// MICRO TREND DOTS — CONTINUOUS (not flip-only)
+// ═══════════════════════════════════════════════════
+
+plotshape(showMicro and microUp, "Micro Bull Dot",
+          shape.circle, location.belowbar, color.new(#00E676, 30), size=size.auto)
+plotshape(showMicro and microDown, "Micro Bear Dot",
+          shape.circle, location.abovebar, color.new(#FF1744, 30), size=size.auto)
+
+// ═══════════════════════════════════════════════════
+// REVERSAL "R" CANDLES
+// ═══════════════════════════════════════════════════
+
+// Unconfirmed R (pending confirmation)
+plotshape(showReversals and bullReversal, "Bull R (Pending)",
+          shape.labelup, location.belowbar, color.new(#00E676, 50),
+          text="R", textcolor=color.white, size=size.small)
+plotshape(showReversals and bearReversal, "Bear R (Pending)",
+          shape.labeldown, location.abovebar, color.new(#FF1744, 50),
+          text="R", textcolor=color.white, size=size.small)
+
+// Confirmed R (sign of strength — next bars closed beyond wick)
+plotshape(showReversals and confirmedBullR, "Bull R CONFIRMED",
+          shape.labelup, location.belowbar, color.new(#00C853, 0),
+          text="R✓", textcolor=color.white, size=size.small)
+plotshape(showReversals and confirmedBearR, "Bear R CONFIRMED",
+          shape.labeldown, location.abovebar, color.new(#D50000, 0),
+          text="R✓", textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════
+// TOPPING "T" / BOTTOMING "B"
+// ═══════════════════════════════════════════════════
+
+plotshape(showTB and potentialTop, "Topping T",
+          shape.labeldown, location.abovebar, color.new(#FF6D00, 0),
+          text="T", textcolor=color.white, size=size.small)
+plotshape(showTB and potentialBottom, "Bottoming B",
+          shape.labelup, location.belowbar, color.new(#2979FF, 0),
+          text="B", textcolor=color.white, size=size.small)
+
+// ═══════════════════════════════════════════════════
+// STRENGTH / WEAKNESS ARROWS
+// ═══════════════════════════════════════════════════
+
+plotshape(showStrength and strengthBull, "Bull Strength",
+          shape.arrowup, location.belowbar, color.new(#1B5E20, 0), size=size.tiny)
+plotshape(showStrength and strengthBear, "Bear Strength",
+          shape.arrowdown, location.abovebar, color.new(#B71C1C, 0), size=size.tiny)
+plotshape(showStrength and weaknessBull, "Bull Weakness",
+          shape.arrowdown, location.abovebar, color.new(#FF6D00, 50), size=size.tiny)
+plotshape(showStrength and weaknessBear, "Bear Weakness",
+          shape.arrowup, location.belowbar, color.new(#FF6D00, 50), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(bullReversal, "Bullish R Candle", "Reversal candle detected — bullish. Wait for confirmation (close above wick).")
+alertcondition(confirmedBullR, "Confirmed Bull R", "Bullish Reversal CONFIRMED — sign of strength. Entry signal.")
+alertcondition(bearReversal, "Bearish R Candle", "Reversal candle detected — bearish. Wait for confirmation (close below wick).")
+alertcondition(confirmedBearR, "Confirmed Bear R", "Bearish Reversal CONFIRMED — sign of strength. Exit/short signal.")
+alertcondition(potentialTop, "Topping Signal T", "Topping T — high probability of drawdown. Consider de-risking.")
+alertcondition(potentialBottom, "Bottoming Signal B", "Bottoming B — potential local bottom. Watch for confirmation.")
+alertcondition(strengthBull, "Bull Strength Arrow", "Trend strength confirmed — stay in long position.")
+alertcondition(weaknessBull, "Bull Weakness Arrow", "Trend weakness detected — consider tightening stops.")
+alertcondition(strongBull and not strongBull[1], "Strong Bullish Trend", "All indicators aligned bullish.")
+alertcondition(strongBear and not strongBear[1], "Strong Bearish Trend", "All indicators aligned bearish.")

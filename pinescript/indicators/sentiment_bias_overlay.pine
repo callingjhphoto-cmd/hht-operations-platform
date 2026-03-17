@@ -1,0 +1,236 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Sentiment Bias Overlay
+// Manual sentiment input from macro analysts + auto technical bias
+// Combines social/macro sentiment with technical indicators
+// Update the sentiment inputs weekly based on analyst research
+
+//@version=5
+indicator("Sentiment Bias Overlay", shorttitle="SBO", overlay=true)
+
+// ═══════════════════════════════════════════════════
+// SENTIMENT INPUTS (Update weekly from analyst research)
+// ═══════════════════════════════════════════════════
+
+// Tier 1 Macro Analysts
+s42Macro    = input.int(0, "42 Macro (Darius Dale)", minval=-5, maxval=5, step=1, group="Tier 1 Macro",
+              tooltip="-5=Extremely Bearish, 0=Neutral, +5=Extremely Bullish")
+sRaoulPal   = input.int(0, "Raoul Pal", minval=-5, maxval=5, step=1, group="Tier 1 Macro")
+sInvAnswers = input.int(0, "Invest Answers", minval=-5, maxval=5, step=1, group="Tier 1 Macro")
+sLynAlden   = input.int(0, "Lyn Alden", minval=-5, maxval=5, step=1, group="Tier 1 Macro")
+sLukeGromen = input.int(0, "Luke Gromen", minval=-5, maxval=5, step=1, group="Tier 1 Macro")
+
+// Tier 2 Crypto/Market Analysts
+sWillyWoo   = input.int(0, "Willy Woo", minval=-5, maxval=5, step=1, group="Tier 2 Analysts")
+sCredCrypto = input.int(0, "Credible Crypto", minval=-5, maxval=5, step=1, group="Tier 2 Analysts")
+sPentoshi   = input.int(0, "Pentoshi", minval=-5, maxval=5, step=1, group="Tier 2 Analysts")
+
+// Tier 3 News/Contrarian
+sZeroHedge  = input.int(0, "ZeroHedge", minval=-5, maxval=5, step=1, group="Tier 3 News")
+sFearGreed  = input.int(0, "Fear & Greed Index (-5 to +5 mapped)", minval=-5, maxval=5, step=1, group="Tier 3 News")
+
+// Settings
+showTable     = input.bool(true, "Show Sentiment Table", group="Display")
+showBias      = input.bool(true, "Show Bias Background", group="Display")
+showTechScore = input.bool(true, "Include Technical Bias", group="Display")
+techWeight    = input.float(0.3, "Technical Score Weight (0-1)", minval=0, maxval=1, step=0.1, group="Display",
+                tooltip="0 = pure social sentiment, 1 = pure technical")
+
+// ═══════════════════════════════════════════════════
+// WEIGHTED SENTIMENT CALCULATION
+// ═══════════════════════════════════════════════════
+
+// Weights: Tier 1 = 3, Tier 2 = 2, Tier 3 = 1
+tier1Score = (s42Macro + sRaoulPal + sInvAnswers + sLynAlden + sLukeGromen) * 3.0
+tier2Score = (sWillyWoo + sCredCrypto + sPentoshi) * 2.0
+tier3Score = (sZeroHedge + sFearGreed) * 1.0
+
+tier1Weight = 5.0 * 3.0  // 5 analysts × weight 3
+tier2Weight = 3.0 * 2.0  // 3 analysts × weight 2
+tier3Weight = 2.0 * 1.0  // 2 sources × weight 1
+totalWeight = tier1Weight + tier2Weight + tier3Weight
+
+// Normalized sentiment (-5 to +5)
+socialSentiment = totalWeight > 0 ? (tier1Score + tier2Score + tier3Score) / totalWeight * 5.0 : 0.0
+
+// ═══════════════════════════════════════════════════
+// TECHNICAL BIAS (Auto-calculated)
+// ═══════════════════════════════════════════════════
+
+// Quick technical score based on key indicators
+ema21  = ta.ema(close, 21)
+ema55  = ta.ema(close, 55)
+ema200 = ta.ema(close, 200)
+rsiVal = ta.rsi(close, 14)
+
+// Score components (each -1 to +1)
+trendScore = (close > ema21 ? 1 : -1) +
+             (close > ema55 ? 1 : -1) +
+             (close > ema200 ? 1 : -1) +
+             (ema21 > ema55 ? 1 : -1) +
+             (ema55 > ema200 ? 1 : -1)
+
+// Normalize to -5 to +5
+techBias = trendScore  // Range is -5 to +5
+
+// ═══════════════════════════════════════════════════
+// COMBINED SCORE
+// ═══════════════════════════════════════════════════
+
+combinedScore = showTechScore ?
+                socialSentiment * (1 - techWeight) + techBias * techWeight :
+                socialSentiment
+
+// Classification
+extremeBull = combinedScore > 3
+bull        = combinedScore > 1 and combinedScore <= 3
+slightBull  = combinedScore > 0 and combinedScore <= 1
+neutral     = combinedScore == 0
+slightBear  = combinedScore < 0 and combinedScore >= -1
+bear        = combinedScore < -1 and combinedScore >= -3
+extremeBear = combinedScore < -3
+
+// ═══════════════════════════════════════════════════
+// CONSENSUS & DIVERGENCE DETECTION
+// ═══════════════════════════════════════════════════
+
+// Count bullish vs bearish analysts
+bullCount = (s42Macro > 0 ? 1 : 0) + (sRaoulPal > 0 ? 1 : 0) + (sInvAnswers > 0 ? 1 : 0) +
+            (sLynAlden > 0 ? 1 : 0) + (sLukeGromen > 0 ? 1 : 0) + (sWillyWoo > 0 ? 1 : 0) +
+            (sCredCrypto > 0 ? 1 : 0) + (sPentoshi > 0 ? 1 : 0) + (sZeroHedge > 0 ? 1 : 0) +
+            (sFearGreed > 0 ? 1 : 0)
+bearCount = (s42Macro < 0 ? 1 : 0) + (sRaoulPal < 0 ? 1 : 0) + (sInvAnswers < 0 ? 1 : 0) +
+            (sLynAlden < 0 ? 1 : 0) + (sLukeGromen < 0 ? 1 : 0) + (sWillyWoo < 0 ? 1 : 0) +
+            (sCredCrypto < 0 ? 1 : 0) + (sPentoshi < 0 ? 1 : 0) + (sZeroHedge < 0 ? 1 : 0) +
+            (sFearGreed < 0 ? 1 : 0)
+
+totalAnalysts = 10
+consensus = math.max(bullCount, bearCount) / totalAnalysts * 100
+
+// Divergence: social bullish but technicals bearish (or vice versa)
+sentimentTechDivergence = (socialSentiment > 1 and techBias < -1) or
+                          (socialSentiment < -1 and techBias > 1)
+
+// ═══════════════════════════════════════════════════
+// VISUAL OVERLAYS
+// ═══════════════════════════════════════════════════
+
+// Bias background
+biasColor = extremeBull ? color.new(#00C853, 88) :
+            bull        ? color.new(#00E676, 92) :
+            slightBull  ? color.new(#B9F6CA, 95) :
+            slightBear  ? color.new(#FFCDD2, 95) :
+            bear        ? color.new(#EF9A9A, 92) :
+            extremeBear ? color.new(#D50000, 88) :
+            na
+
+bgcolor(showBias ? biasColor : na, title="Sentiment Bias")
+
+// Divergence warning
+bgcolor(sentimentTechDivergence ? color.new(#FFD600, 90) : na, title="Sentiment-Tech Divergence")
+
+// ═══════════════════════════════════════════════════
+// SENTIMENT TABLE
+// ═══════════════════════════════════════════════════
+
+scoreToText(score) =>
+    score >= 4  ? "VERY BULL" :
+    score >= 2  ? "BULLISH" :
+    score >= 1  ? "SL. BULL" :
+    score <= -4 ? "VERY BEAR" :
+    score <= -2 ? "BEARISH" :
+    score <= -1 ? "SL. BEAR" :
+    "NEUTRAL"
+
+scoreToColor(score) =>
+    score >= 3  ? color.new(#00C853, 0) :
+    score >= 1  ? color.new(#69F0AE, 0) :
+    score <= -3 ? color.new(#FF1744, 0) :
+    score <= -1 ? color.new(#EF9A9A, 0) :
+    color.new(#BDBDBD, 0)
+
+var table sentTable = table.new(position.top_left, 3, 15,
+                                bgcolor=color.new(#1E1E1E, 10),
+                                border_width=1, border_color=color.new(#333333, 0))
+
+if barstate.islast and showTable
+    // Header
+    table.cell(sentTable, 0, 0, "ANALYST", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#333333, 0))
+    table.cell(sentTable, 1, 0, "SCORE", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#333333, 0))
+    table.cell(sentTable, 2, 0, "BIAS", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#333333, 0))
+
+    // Tier 1
+    table.cell(sentTable, 0, 1, "42 Macro", text_color=#FFD600, text_size=size.tiny)
+    table.cell(sentTable, 1, 1, str.tostring(s42Macro), text_color=scoreToColor(s42Macro), text_size=size.tiny)
+    table.cell(sentTable, 2, 1, scoreToText(s42Macro), text_color=scoreToColor(s42Macro), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 2, "Raoul Pal", text_color=#FFD600, text_size=size.tiny)
+    table.cell(sentTable, 1, 2, str.tostring(sRaoulPal), text_color=scoreToColor(sRaoulPal), text_size=size.tiny)
+    table.cell(sentTable, 2, 2, scoreToText(sRaoulPal), text_color=scoreToColor(sRaoulPal), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 3, "InvestAnswers", text_color=#FFD600, text_size=size.tiny)
+    table.cell(sentTable, 1, 3, str.tostring(sInvAnswers), text_color=scoreToColor(sInvAnswers), text_size=size.tiny)
+    table.cell(sentTable, 2, 3, scoreToText(sInvAnswers), text_color=scoreToColor(sInvAnswers), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 4, "Lyn Alden", text_color=#FFD600, text_size=size.tiny)
+    table.cell(sentTable, 1, 4, str.tostring(sLynAlden), text_color=scoreToColor(sLynAlden), text_size=size.tiny)
+    table.cell(sentTable, 2, 4, scoreToText(sLynAlden), text_color=scoreToColor(sLynAlden), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 5, "Luke Gromen", text_color=#FFD600, text_size=size.tiny)
+    table.cell(sentTable, 1, 5, str.tostring(sLukeGromen), text_color=scoreToColor(sLukeGromen), text_size=size.tiny)
+    table.cell(sentTable, 2, 5, scoreToText(sLukeGromen), text_color=scoreToColor(sLukeGromen), text_size=size.tiny)
+
+    // Tier 2
+    table.cell(sentTable, 0, 6, "Willy Woo", text_color=#2979FF, text_size=size.tiny)
+    table.cell(sentTable, 1, 6, str.tostring(sWillyWoo), text_color=scoreToColor(sWillyWoo), text_size=size.tiny)
+    table.cell(sentTable, 2, 6, scoreToText(sWillyWoo), text_color=scoreToColor(sWillyWoo), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 7, "Cred Crypto", text_color=#2979FF, text_size=size.tiny)
+    table.cell(sentTable, 1, 7, str.tostring(sCredCrypto), text_color=scoreToColor(sCredCrypto), text_size=size.tiny)
+    table.cell(sentTable, 2, 7, scoreToText(sCredCrypto), text_color=scoreToColor(sCredCrypto), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 8, "Pentoshi", text_color=#2979FF, text_size=size.tiny)
+    table.cell(sentTable, 1, 8, str.tostring(sPentoshi), text_color=scoreToColor(sPentoshi), text_size=size.tiny)
+    table.cell(sentTable, 2, 8, scoreToText(sPentoshi), text_color=scoreToColor(sPentoshi), text_size=size.tiny)
+
+    // Tier 3
+    table.cell(sentTable, 0, 9, "ZeroHedge", text_color=#FF6D00, text_size=size.tiny)
+    table.cell(sentTable, 1, 9, str.tostring(sZeroHedge), text_color=scoreToColor(sZeroHedge), text_size=size.tiny)
+    table.cell(sentTable, 2, 9, scoreToText(sZeroHedge), text_color=scoreToColor(sZeroHedge), text_size=size.tiny)
+
+    table.cell(sentTable, 0, 10, "Fear/Greed", text_color=#FF6D00, text_size=size.tiny)
+    table.cell(sentTable, 1, 10, str.tostring(sFearGreed), text_color=scoreToColor(sFearGreed), text_size=size.tiny)
+    table.cell(sentTable, 2, 10, scoreToText(sFearGreed), text_color=scoreToColor(sFearGreed), text_size=size.tiny)
+
+    // Summary
+    table.cell(sentTable, 0, 11, "", text_size=size.tiny, bgcolor=color.new(#333333, 0))
+    table.cell(sentTable, 1, 11, "", text_size=size.tiny, bgcolor=color.new(#333333, 0))
+    table.cell(sentTable, 2, 11, "", text_size=size.tiny, bgcolor=color.new(#333333, 0))
+
+    table.cell(sentTable, 0, 12, "SOCIAL", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#222222, 0))
+    table.cell(sentTable, 1, 12, str.tostring(math.round(socialSentiment, 1)),
+               text_color=scoreToColor(math.round(socialSentiment)), text_size=size.tiny, bgcolor=color.new(#222222, 0))
+    table.cell(sentTable, 2, 12, scoreToText(math.round(socialSentiment)),
+               text_color=scoreToColor(math.round(socialSentiment)), text_size=size.tiny, bgcolor=color.new(#222222, 0))
+
+    table.cell(sentTable, 0, 13, "TECHNICAL", text_color=color.white, text_size=size.tiny, bgcolor=color.new(#222222, 0))
+    table.cell(sentTable, 1, 13, str.tostring(techBias),
+               text_color=scoreToColor(techBias), text_size=size.tiny, bgcolor=color.new(#222222, 0))
+    table.cell(sentTable, 2, 13, scoreToText(techBias),
+               text_color=scoreToColor(techBias), text_size=size.tiny, bgcolor=color.new(#222222, 0))
+
+    table.cell(sentTable, 0, 14, "COMBINED", text_color=color.white, text_size=size.small, bgcolor=color.new(#111111, 0))
+    table.cell(sentTable, 1, 14, str.tostring(math.round(combinedScore, 1)),
+               text_color=scoreToColor(math.round(combinedScore)), text_size=size.small, bgcolor=color.new(#111111, 0))
+    divText = sentimentTechDivergence ? "⚠ DIV" : scoreToText(math.round(combinedScore))
+    table.cell(sentTable, 2, 14, divText,
+               text_color=sentimentTechDivergence ? #FFD600 : scoreToColor(math.round(combinedScore)),
+               text_size=size.small, bgcolor=color.new(#111111, 0))
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(combinedScore > 3, "Extreme Bullish Sentiment", "Combined sentiment score > 3 — extreme bullish bias")
+alertcondition(combinedScore < -3, "Extreme Bearish Sentiment", "Combined sentiment score < -3 — extreme bearish bias")
+alertcondition(sentimentTechDivergence, "Sentiment-Technical Divergence", "Social sentiment and technicals disagree — caution")

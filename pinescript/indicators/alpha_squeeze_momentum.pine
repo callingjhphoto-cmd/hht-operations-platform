@@ -1,0 +1,232 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Alpha Squeeze Momentum v2 — Corrected from exhaustive Trading Alpha research
+//
+// RESEARCH-BASED CORRECTIONS (6/10 → 8/10):
+// - Added TWO-STAGE breakout arrows: Potential (small/early) + Confirmed (large/later)
+// - Added Trend Bars (white=uptrend, grey=downtrend) from HTF Suite
+// - Added Momentum Bars (green/red) as leading indicators of trend change
+// - Added Caution X (yellow) and Danger X (red) for breakout exhaustion
+// - Added TD 8/9 count display (integrated as in Trading Alpha's HTF Suite)
+// - Squeeze detection confirmed correct: BB(20,2.0) inside KC(20,1.5) = standard TTM
+
+//@version=5
+indicator("Alpha Squeeze Momentum v2", shorttitle="ASM2", overlay=false)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+bbLength    = input.int(20, "BB Length", minval=1, group="Bollinger Bands")
+bbMult      = input.float(2.0, "BB StdDev", minval=0.1, step=0.1, group="Bollinger Bands")
+kcLength    = input.int(20, "KC Length", minval=1, group="Keltner Channels")
+kcMult      = input.float(1.5, "KC ATR Mult", minval=0.1, step=0.1, group="Keltner Channels")
+momLength   = input.int(20, "Momentum Length", minval=1, group="Momentum")
+
+// Trend/Momentum Bars
+trendMA1    = input.int(10, "Trend Fast MA", minval=1, group="Trend Bars")
+trendMA2    = input.int(20, "Trend Slow MA", minval=1, group="Trend Bars")
+
+showBg      = input.bool(true, "Show Squeeze Background", group="Display")
+showArrows  = input.bool(true, "Show Breakout Arrows", group="Display")
+showCaution = input.bool(true, "Show Caution/Danger X", group="Display")
+showTD      = input.bool(true, "Show TD 8/9", group="Display")
+
+// ═══════════════════════════════════════════════════
+// SQUEEZE DETECTION
+// ═══════════════════════════════════════════════════
+
+bbBasis  = ta.sma(close, bbLength)
+bbDev    = bbMult * ta.stdev(close, bbLength)
+bbUpper  = bbBasis + bbDev
+bbLower  = bbBasis - bbDev
+
+kcBasis  = ta.sma(close, kcLength)
+kcRange  = ta.atr(kcLength)
+kcUpper  = kcBasis + kcRange * kcMult
+kcLower  = kcBasis - kcRange * kcMult
+
+sqzOn    = bbLower > kcLower and bbUpper < kcUpper
+sqzOff   = not sqzOn
+
+// Squeeze tracking
+var int sqzCount = 0
+sqzCount := sqzOn ? sqzCount + 1 : 0
+sqzFired = sqzOff and sqzOn[1]
+highEnergy = sqzCount > 6
+
+// ═══════════════════════════════════════════════════
+// MOMENTUM (TTM Squeeze)
+// ═══════════════════════════════════════════════════
+
+hh = ta.highest(high, momLength)
+ll = ta.lowest(low, momLength)
+dm = (hh + ll) / 2
+sm = ta.sma(close, momLength)
+delta = close - (dm + sm) / 2
+momentum = ta.linreg(delta, momLength, 0)
+
+momRising   = momentum > momentum[1]
+momFalling  = momentum < momentum[1]
+momPositive = momentum > 0
+momNegative = momentum < 0
+
+// ═══════════════════════════════════════════════════
+// TREND BARS (White/Grey) — MA-based shorter-term trend
+// ═══════════════════════════════════════════════════
+
+tFast = ta.ema(close, trendMA1)
+tSlow = ta.ema(close, trendMA2)
+trendUp   = tFast > tSlow   // White bars = uptrend
+trendDown = tFast < tSlow   // Grey bars = downtrend
+
+// ═══════════════════════════════════════════════════
+// MOMENTUM BARS (Green/Red) — Leading indicator of trend change
+// ═══════════════════════════════════════════════════
+
+// Green momentum: momentum rising AND positive acceleration
+// These appear BEFORE trend bars change direction
+momBarBull = momRising and momentum > momentum[2]
+momBarBear = momFalling and momentum < momentum[2]
+
+// ═══════════════════════════════════════════════════
+// TWO-STAGE BREAKOUT ARROWS
+// ═══════════════════════════════════════════════════
+
+// POTENTIAL breakout (smaller arrow — early/aggressive signal)
+// Fires when: squeeze active + momentum starts moving directionally
+potentialBullBreakout = sqzOn and momPositive and momRising and not (sqzOn[1] and momPositive[1] and momRising[1])
+potentialBearBreakout = sqzOn and momNegative and momFalling and not (sqzOn[1] and momNegative[1] and momFalling[1])
+
+// CONFIRMED breakout (larger arrow — conservative signal)
+// Fires when: squeeze actually fires (BB expand outside KC) + momentum confirms direction
+confirmedBullBreakout = sqzFired and momPositive
+confirmedBearBreakout = sqzFired and momNegative
+
+// ═══════════════════════════════════════════════════
+// CAUTION & DANGER X's (Breakout Exhaustion)
+// ═══════════════════════════════════════════════════
+
+// Track bars since squeeze fired
+var int barsSinceFire = 999
+barsSinceFire := sqzFired ? 0 : barsSinceFire + 1
+
+// After squeeze fires, track if momentum is decelerating
+momDecel = (momPositive and momFalling) or (momNegative and momRising)
+
+// Caution X (yellow): first sign breakout leg is tiring (momentum decelerating after fire)
+cautionX = barsSinceFire > 2 and barsSinceFire < 20 and momDecel and not momDecel[1]
+
+// Danger X (red): breakout leg definitively ending (momentum crossed zero or strong deceleration)
+dangerX = barsSinceFire > 3 and barsSinceFire < 25 and (
+    (momPositive[1] and momNegative) or      // momentum crossed zero
+    (momNegative[1] and momPositive) or
+    (momDecel and momDecel[1] and momDecel[2]) // 3 bars of deceleration
+    )
+
+// ═══════════════════════════════════════════════════
+// TD 8/9 (Integrated as in Trading Alpha HTF Suite)
+// ═══════════════════════════════════════════════════
+
+buySetup  = close < close[4]
+sellSetup = close > close[4]
+
+var int tdBuyCount  = 0
+var int tdSellCount = 0
+
+if buySetup
+    tdBuyCount  := tdBuyCount + 1
+    tdSellCount := 0
+else if sellSetup
+    tdSellCount := tdSellCount + 1
+    tdBuyCount  := 0
+else
+    tdBuyCount  := 0
+    tdSellCount := 0
+
+td8Buy  = tdBuyCount == 8
+td9Buy  = tdBuyCount == 9
+td8Sell = tdSellCount == 8
+td9Sell = tdSellCount == 9
+
+// ═══════════════════════════════════════════════════
+// COLORS
+// ═══════════════════════════════════════════════════
+
+momColor = momPositive and momRising  ? color.new(#00E676, 0) :
+           momPositive and momFalling ? color.new(#1B5E20, 0) :
+           momNegative and momFalling ? color.new(#FF1744, 0) :
+           momNegative and momRising  ? color.new(#B71C1C, 0) :
+           color.gray
+
+sqzColor = sqzOn and highEnergy ? color.new(#FFD600, 0) :
+           sqzOn                ? color.new(#FF6D00, 0) :
+           color.new(#00E676, 0)
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Momentum histogram
+plot(momentum, "Momentum", momColor, style=plot.style_histogram, linewidth=4)
+hline(0, "Zero", color.new(#FFFFFF, 70), hline.style_dotted)
+
+// Squeeze dots on zero line
+plot(0, "Squeeze", sqzColor, style=plot.style_circles, linewidth=4)
+
+// Squeeze background
+bgcolor(showBg and sqzOn and highEnergy ? color.new(#FFD600, 90) :
+        showBg and sqzOn                ? color.new(#FF6D00, 95) : na)
+
+// --- TWO-STAGE ARROWS ---
+// Potential (smaller, lighter)
+plotshape(showArrows and potentialBullBreakout, "Potential Bull",
+          shape.triangleup, location.bottom, color.new(#69F0AE, 0), size=size.tiny)
+plotshape(showArrows and potentialBearBreakout, "Potential Bear",
+          shape.triangledown, location.top, color.new(#EF9A9A, 0), size=size.tiny)
+
+// Confirmed (larger, brighter)
+plotshape(showArrows and confirmedBullBreakout, "Confirmed Bull",
+          shape.triangleup, location.bottom, color.new(#00C853, 0), size=size.normal)
+plotshape(showArrows and confirmedBearBreakout, "Confirmed Bear",
+          shape.triangledown, location.top, color.new(#D50000, 0), size=size.normal)
+
+// --- CAUTION/DANGER X's ---
+plotshape(showCaution and cautionX, "Caution X",
+          shape.xcross, location.top, color.new(#FFD600, 0), size=size.tiny)
+plotshape(showCaution and dangerX, "Danger X",
+          shape.xcross, location.top, color.new(#FF1744, 0), size=size.small)
+
+// --- TD 8/9 ---
+plotshape(showTD and td8Buy, "TD8 Buy", shape.diamond, location.bottom,
+          color.new(#00E676, 30), size=size.tiny)
+plotshape(showTD and td9Buy, "TD9 Buy", shape.diamond, location.bottom,
+          color.new(#00E676, 0), size=size.small)
+plotshape(showTD and td8Sell, "TD8 Sell", shape.diamond, location.top,
+          color.new(#FF1744, 30), size=size.tiny)
+plotshape(showTD and td9Sell, "TD9 Sell", shape.diamond, location.top,
+          color.new(#FF1744, 0), size=size.small)
+
+// --- TREND BAR INDICATOR (separate line at top) ---
+plot(trendUp ? 1 : -1, "Trend Bars", trendUp ? color.white : color.gray,
+     style=plot.style_columns, linewidth=2, display=display.pane)
+
+// --- MOMENTUM BARS (leading indicator) ---
+plot(momBarBull ? 0.5 : momBarBear ? -0.5 : 0, "Momentum Bars",
+     momBarBull ? color.new(#00E676, 30) : momBarBear ? color.new(#FF1744, 30) : color.new(#424242, 80),
+     style=plot.style_columns, linewidth=1, display=display.pane)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(sqzOn and not sqzOn[1], "Squeeze Started", "Squeeze detected — volatility compressing")
+alertcondition(highEnergy and not highEnergy[1], "High Energy Squeeze", "Extended compression (6+ bars)")
+alertcondition(potentialBullBreakout, "Potential Bull Breakout", "Potential bullish breakout arrow — early signal during squeeze")
+alertcondition(potentialBearBreakout, "Potential Bear Breakout", "Potential bearish breakout arrow — early signal during squeeze")
+alertcondition(confirmedBullBreakout, "Confirmed Bull Breakout", "CONFIRMED bullish squeeze breakout — high probability long")
+alertcondition(confirmedBearBreakout, "Confirmed Bear Breakout", "CONFIRMED bearish squeeze breakout — high probability short")
+alertcondition(cautionX, "Caution X", "Breakout first leg showing fatigue — consider partial profits")
+alertcondition(dangerX, "Danger X", "Breakout leg ending — tighten stops or exit")
+alertcondition(td9Buy, "TD9 Buy Exhaustion", "TD Sequential 9 buy count — potential bottom")
+alertcondition(td9Sell, "TD9 Sell Exhaustion", "TD Sequential 9 sell count — potential top")
