@@ -48,8 +48,14 @@
 **Best for**: Forex and crypto. Works on all timeframes, best on 4H/Daily
 
 ### 4. InvestAnswers ATR-DCA System (`invest_answers_atr_dca.pine`)
-**Inspired by**: James Mullarney's ATR + DCAS methodology
+**Inspired by**: James Mullarney's Augmented Trading Range + DCAS methodology
 **What it does**: ATR-based trading range with smart DCA zone detection and risk management
+**RESEARCH NOTE (2026-03-17)**: Deep dive research revealed major corrections needed:
+- IA's "ATR" = "Augmented Trading Range" (proprietary), NOT standard Average True Range
+- IA's DCAS = zero-line oscillator with variable multipliers (0.5x-3x), NOT fixed price zones
+- IA's full system includes IADSS (4 components), TABI (15+ on-chain metrics), LILO (10-level
+  price ladder), Arb Cloud, Macro Model, and more
+- See: `.claude/research/invest_answers_deep_dive.md` for full findings
 **Key signals**:
 - Yellow band = inner trading range (normal volatility)
 - Orange band = extreme range (mean-reversion zone)
@@ -59,6 +65,7 @@
 - Red "X" = risk warning (overextended + divergence)
 **Best for**: Crypto (BTC, ETH, SOL), disruptive tech stocks. Swing/position trading
 **Parameters**: ATR(14), Range EMA(21), Inner mult(1.5), Outer mult(2.5), EMAs 21/55/200
+**Needs revision**: DCAS should be oscillator-based with multiplier output; ATR should include trend cloud
 
 ### 5. Alpha Confirmation Suite (`alpha_confirmation_suite.pine`)
 **Inspired by**: Trading Alpha Confirmation indicators
@@ -146,12 +153,21 @@
 | Indicator | Trading Alpha | Invest Answers | Wicks Trading |
 |-----------|:---:|:---:|:---:|
 | Squeeze Momentum | ✅ Core | — | — |
-| Trend MAs | ✅ Trend Bars | ✅ EMA 21/55/200 | ✅ Trend context |
-| ATR Range | ✅ HTF/LTF | ✅ Core | — |
-| RSI + Divergence | ✅ Alpha RSI | ✅ Custom RSI | ✅ Confluence |
+| Trend MAs | ✅ Trend Bars | ✅ IADSS Trend | ✅ Trend context |
+| Augmented Range | — | ✅ ATR (Core) | — |
+| RSI + Divergence | ✅ Alpha RSI | ✅ IADSS Mean Rev | ✅ Confluence |
 | Wick Analysis | — | — | ✅ Core |
 | TD Sequential | ✅ TD9 | — | — |
 | Volume/Thrust | ✅ Alpha Thrust | — | ✅ Vol confirm |
 | Fibonacci | — | — | ✅ Fib + Wick |
-| DCA Zones | — | ✅ DCAS | — |
+| DCA Oscillator | — | ✅ DCAS (multiplier) | — |
 | ICT Liquidity | — | — | ✅ Sweep detect |
+| Multi-Band Bollinger | — | ✅ IADSS Confluence | — |
+| On-Chain Metrics | — | ✅ TABI (15+ metrics) | — |
+| Macro Composite | — | ✅ Macro Model (12+) | — |
+| Cointegration Arb | — | ✅ Arb Cloud | — |
+| Layer In/Out | — | ✅ LILO (10 levels) | — |
+| Pair Hedging | — | ✅ Pair Trading | — |
+
+**Note**: Invest Answers' "ATR" = "Augmented Trading Range" (proprietary), NOT standard Average True Range.
+See `.claude/research/invest_answers_deep_dive.md` for full research (2026-03-17).
