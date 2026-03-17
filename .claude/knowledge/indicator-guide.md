@@ -202,3 +202,43 @@ Full research: `.claude/research/indicator-discovery-iterations-7-8.md`
 
 **Note**: Invest Answers' "ATR" = "Augmented Trading Range" (proprietary), NOT standard Average True Range.
 See `.claude/research/invest_answers_deep_dive.md` for full research (2026-03-17).
+
+## ICT (Inner Circle Trader) Methodology — Quick Reference
+
+### Core Concepts (all mathematically defined, fully programmable)
+
+| Concept | Definition | Detection Rule |
+|---------|------------|----------------|
+| **Fair Value Gap (FVG)** | 3-candle gap where candle 1 high < candle 3 low (bullish) or candle 1 low > candle 3 high (bearish) | `low > high[2]` (bull) / `high < low[2]` (bear) |
+| **Order Block (OB)** | Last opposing candle before displacement; zone of institutional order placement | Volume pivot peak + opposing candle direction |
+| **Breaker Block** | Failed OB that sweeps liquidity before reversing; flips S/R role | OB broken after liquidity sweep |
+| **Mitigation Block** | Failed OB without liquidity sweep; fading momentum | OB broken without new high/low |
+| **Market Structure Shift (MSS)** | Swing break with displacement + FVG; strongest reversal signal | Body close through swing + large candle + small wick |
+| **Liquidity Sweep** | Price briefly exceeds key level then reverses back inside range | `low < prior_low AND close > prior_low` |
+| **OTE (Optimal Trade Entry)** | 61.8%-78.6% Fibonacci retracement zone; sweet spot at 70.5% | Fibonacci from swing low to swing high |
+| **Kill Zones** | London 2-5AM ET, NY 7-10AM ET, Asian 7-10PM ET, LC 10AM-12PM ET | Time-based filter |
+| **Power of Three (AMD)** | Accumulation (7PM-1AM), Manipulation (1AM-7AM), Distribution (7AM-1PM) | Session-based phase detection |
+| **IPDA Ranges** | 20/40/60 day lookback for institutional targets | `ta.highest(high, 20/40/60)` and `ta.lowest(low, 20/40/60)` |
+| **Displacement** | 3+ same-direction candles with large bodies, small wicks, creating FVG | Consecutive candles + body > ATR * 0.5 + wick < body * 0.3 |
+| **Inducement** | Deceptive move targeting short-term stops before reversal | Price dip/spike beyond short-term high/low then reversal |
+
+### ICT Integration with Existing Indicators
+- **Wick Analysis Pro**: Wick rejections = liquidity sweeps in ICT terms. Add FVG/OB confluence for higher conviction
+- **Alpha Squeeze Momentum**: Squeeze fire + ICT displacement = confirmed institutional breakout
+- **Alpha Confirmation Suite**: RSI divergence at an Order Block = multi-system confluence
+
+### Key Statistical Findings (Wick/Candlestick Research)
+- 66% of 75 candlestick patterns outperform S&P 500 buy-and-hold (QuantifiedStrategies backtest)
+- Hammer is #2 most effective single pattern; daily timeframe most reliable
+- Pin bars at psychological levels have 15-20% higher success vs random locations
+- "Bearish" patterns often work better as bullish signals (counter-intuitive finding)
+- 12 patterns with profit factor >1.5 combine for 12.89% CAGR, 2.02 profit factor
+
+### Top TradingView ICT/SMC Scripts
+1. Smart Money Concepts (SMC) [LuxAlgo] — open source, most widely used
+2. Hybrid Smart Money Concepts [MarkitTick] — statistical stress model + SMC
+3. Order Block Detector [LuxAlgo] — volume-based OB detection
+4. Fair Value Gap [LuxAlgo] — fill tracking + ATR threshold
+5. ICT Power Of Three [Flux Charts] — AMD detection with backtesting
+
+Full research: `research/ict-methodology-wick-analysis-deep-dive.md` (2026-03-17).
