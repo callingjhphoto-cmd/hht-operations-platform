@@ -1,0 +1,224 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Alpha Confirmation Suite - Inspired by Trading Alpha Confirmation Indicators
+// Custom RSI with momentum lines, institutional thrust, divergence detection, S/R pivots
+
+//@version=5
+indicator("Alpha Confirmation Suite", shorttitle="ACS", overlay=false)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Alpha RSI
+rsiLen       = input.int(14, "RSI Length", minval=1, group="Alpha RSI")
+rsiFastMom   = input.int(5, "Fast Momentum Length", minval=1, group="Alpha RSI")
+rsiSlowMom   = input.int(13, "Slow Momentum Length", minval=1, group="Alpha RSI")
+
+// Divergence Detection
+divLookback  = input.int(14, "Divergence Lookback", minval=5, maxval=50, group="Divergence")
+divPivotLen  = input.int(5, "Pivot Length", minval=2, maxval=10, group="Divergence")
+
+// Institutional Thrust
+thrustLen    = input.int(14, "Thrust Period", minval=1, group="Alpha Thrust")
+thrustSmooth = input.int(3, "Thrust Smoothing", minval=1, group="Alpha Thrust")
+
+// Display
+showRSI      = input.bool(true, "Show Alpha RSI", group="Display")
+showThrust   = input.bool(true, "Show Alpha Thrust", group="Display")
+showDiv      = input.bool(true, "Show Divergences", group="Display")
+
+// ═══════════════════════════════════════════════════
+// ALPHA RSI (Custom RSI + Momentum Lines)
+// ═══════════════════════════════════════════════════
+
+rsiVal      = ta.rsi(close, rsiLen)
+rsiFastMA   = ta.ema(rsiVal, rsiFastMom)
+rsiSlowMA   = ta.ema(rsiVal, rsiSlowMom)
+
+// Momentum cross signals
+rsiBullCross = ta.crossover(rsiFastMA, rsiSlowMA)
+rsiBearCross = ta.crossunder(rsiFastMA, rsiSlowMA)
+
+// RSI state
+rsiOB       = rsiVal > 70
+rsiOS       = rsiVal < 30
+rsiMidBull  = rsiVal > 50 and rsiVal <= 70
+rsiMidBear  = rsiVal < 50 and rsiVal >= 30
+
+// ═══════════════════════════════════════════════════
+// DIVERGENCE DETECTION
+// ═══════════════════════════════════════════════════
+
+// Find RSI pivots
+rsiPivotHigh = ta.pivothigh(rsiVal, divPivotLen, divPivotLen)
+rsiPivotLow  = ta.pivotlow(rsiVal, divPivotLen, divPivotLen)
+
+// Find price pivots
+pricePivotHigh = ta.pivothigh(high, divPivotLen, divPivotLen)
+pricePivotLow  = ta.pivotlow(low, divPivotLen, divPivotLen)
+
+// Track last pivot values
+var float lastRSIHigh    = na
+var float lastRSILow     = na
+var float lastPriceHigh  = na
+var float lastPriceLow   = na
+var float prevRSIHigh    = na
+var float prevRSILow     = na
+var float prevPriceHigh  = na
+var float prevPriceLow   = na
+
+if not na(rsiPivotHigh)
+    prevRSIHigh   := lastRSIHigh
+    lastRSIHigh   := rsiPivotHigh
+    prevPriceHigh := lastPriceHigh
+    lastPriceHigh := pricePivotHigh
+
+if not na(rsiPivotLow)
+    prevRSILow    := lastRSILow
+    lastRSILow    := rsiPivotLow
+    prevPriceLow  := lastPriceLow
+    lastPriceLow  := pricePivotLow
+
+// Regular Bullish Divergence: price lower low, RSI higher low
+bullDiv = not na(rsiPivotLow) and
+          not na(prevRSILow) and
+          not na(lastPriceLow) and
+          not na(prevPriceLow) and
+          lastPriceLow < prevPriceLow and
+          lastRSILow > prevRSILow
+
+// Regular Bearish Divergence: price higher high, RSI lower high
+bearDiv = not na(rsiPivotHigh) and
+          not na(prevRSIHigh) and
+          not na(lastPriceHigh) and
+          not na(prevPriceHigh) and
+          lastPriceHigh > prevPriceHigh and
+          lastRSIHigh < prevRSIHigh
+
+// Hidden Bullish Divergence: price higher low, RSI lower low (trend continuation)
+hiddenBullDiv = not na(rsiPivotLow) and
+                not na(prevRSILow) and
+                not na(lastPriceLow) and
+                not na(prevPriceLow) and
+                lastPriceLow > prevPriceLow and
+                lastRSILow < prevRSILow
+
+// Hidden Bearish Divergence: price lower high, RSI higher high (trend continuation)
+hiddenBearDiv = not na(rsiPivotHigh) and
+                not na(prevRSIHigh) and
+                not na(lastPriceHigh) and
+                not na(prevPriceHigh) and
+                lastPriceHigh < prevPriceHigh and
+                lastRSIHigh > prevRSIHigh
+
+// ═══════════════════════════════════════════════════
+// ALPHA THRUST (Institutional Buying/Selling Pressure)
+// ═══════════════════════════════════════════════════
+
+// Thrust = volume-weighted price change normalized by ATR
+// High positive thrust = strong institutional buying
+// High negative thrust = strong institutional selling
+
+priceChange  = close - close[1]
+atrNorm      = ta.atr(thrustLen)
+rawThrust    = atrNorm > 0 ? (priceChange * volume) / (atrNorm * ta.sma(volume, thrustLen)) : 0
+thrust       = ta.ema(rawThrust, thrustSmooth)
+
+// Thrust levels
+strongBuy    = thrust > 1.5
+moderateBuy  = thrust > 0.5 and thrust <= 1.5
+weakBuy      = thrust > 0 and thrust <= 0.5
+weakSell     = thrust < 0 and thrust >= -0.5
+moderateSell = thrust < -0.5 and thrust >= -1.5
+strongSell   = thrust < -1.5
+
+// Thrust color
+thrustColor  = strongBuy    ? color.new(#00E676, 0) :
+               moderateBuy  ? color.new(#69F0AE, 0) :
+               weakBuy      ? color.new(#B9F6CA, 0) :
+               weakSell     ? color.new(#FFCDD2, 0) :
+               moderateSell ? color.new(#EF9A9A, 0) :
+               strongSell   ? color.new(#FF1744, 0) :
+               color.gray
+
+// ═══════════════════════════════════════════════════
+// CONFIRMATION SCORING
+// ═══════════════════════════════════════════════════
+
+// Bull confirmation score (0-5)
+bullConfirm = (rsiVal > 50 ? 1 : 0) +
+              (rsiFastMA > rsiSlowMA ? 1 : 0) +
+              (thrust > 0 ? 1 : 0) +
+              (thrust > 0.5 ? 1 : 0) +
+              (rsiVal > rsiVal[1] ? 1 : 0)
+
+// Bear confirmation score (0-5)
+bearConfirm = (rsiVal < 50 ? 1 : 0) +
+              (rsiFastMA < rsiSlowMA ? 1 : 0) +
+              (thrust < 0 ? 1 : 0) +
+              (thrust < -0.5 ? 1 : 0) +
+              (rsiVal < rsiVal[1] ? 1 : 0)
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Alpha RSI
+rsiColor = rsiOB ? color.new(#FF1744, 0) :
+           rsiOS ? color.new(#00E676, 0) :
+           rsiMidBull ? color.new(#69F0AE, 30) :
+           color.new(#EF9A9A, 30)
+
+plot(showRSI ? rsiVal : na, "Alpha RSI", rsiColor, linewidth=2)
+plot(showRSI ? rsiFastMA : na, "RSI Fast Mom", color.new(#FFD600, 50), linewidth=1)
+plot(showRSI ? rsiSlowMA : na, "RSI Slow Mom", color.new(#FF6D00, 50), linewidth=1)
+
+// RSI levels
+hline(70, "Overbought", color.new(#FF1744, 70), hline.style_dashed)
+hline(50, "Midline", color.new(#FFFFFF, 80), hline.style_dotted)
+hline(30, "Oversold", color.new(#00E676, 70), hline.style_dashed)
+
+// Alpha Thrust (histogram at bottom)
+plot(showThrust ? thrust * 20 + 50 : na, "Alpha Thrust", thrustColor,
+     style=plot.style_columns, linewidth=2)
+
+// OB/OS background
+bgcolor(rsiOB ? color.new(#FF1744, 92) : rsiOS ? color.new(#00E676, 92) : na)
+
+// ═══════════════════════════════════════════════════
+// DIVERGENCE MARKERS
+// ═══════════════════════════════════════════════════
+
+plotshape(showDiv and bullDiv, "Bullish Divergence",
+          shape.labelup, location.bottom, color.new(#00E676, 0),
+          text="BULL\nDIV", textcolor=color.white, size=size.small)
+
+plotshape(showDiv and bearDiv, "Bearish Divergence",
+          shape.labeldown, location.top, color.new(#FF1744, 0),
+          text="BEAR\nDIV", textcolor=color.white, size=size.small)
+
+plotshape(showDiv and hiddenBullDiv, "Hidden Bull Div",
+          shape.triangleup, location.bottom, color.new(#00E676, 40), size=size.tiny)
+
+plotshape(showDiv and hiddenBearDiv, "Hidden Bear Div",
+          shape.triangledown, location.top, color.new(#FF1744, 40), size=size.tiny)
+
+// Momentum cross markers
+plotshape(rsiBullCross, "RSI Bull Cross", shape.circle, location.bottom,
+          color.new(#00E676, 0), size=size.tiny)
+plotshape(rsiBearCross, "RSI Bear Cross", shape.circle, location.top,
+          color.new(#FF1744, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(bullDiv, "Bullish RSI Divergence", "Bullish divergence detected — price lower low but RSI higher low")
+alertcondition(bearDiv, "Bearish RSI Divergence", "Bearish divergence detected — price higher high but RSI lower high")
+alertcondition(rsiBullCross, "RSI Momentum Bull Cross", "RSI fast momentum crossed above slow — bullish momentum shift")
+alertcondition(rsiBearCross, "RSI Momentum Bear Cross", "RSI fast momentum crossed below slow — bearish momentum shift")
+alertcondition(strongBuy, "Strong Institutional Buying", "Alpha Thrust shows strong institutional buying pressure")
+alertcondition(strongSell, "Strong Institutional Selling", "Alpha Thrust shows strong institutional selling pressure")
+alertcondition(bullConfirm >= 4, "Full Bull Confirmation", "4+ bullish confirmations — high probability setup")
+alertcondition(bearConfirm >= 4, "Full Bear Confirmation", "4+ bearish confirmations — high probability setup")

@@ -1,0 +1,157 @@
+# Trading Indicator Knowledge Base
+
+## Agent Team Overview
+
+| Agent | Role | Invoke By |
+|-------|------|-----------|
+| **indicator-specialist** | Codes & optimizes PineScript indicators | "implement/code this indicator" |
+| **indicator-researcher** | Finds the most accurate indicators from open-source & community | "find new indicators", "search for better X" |
+| **market-analyst** | Determines best indicators per market | "which indicators work best for WTI?" |
+| **strategy-researcher** | Studies Trading Alpha, Invest Answers, Wicks systems | "what does Trading Alpha use?" |
+| **market-scanner** | Scans for active setups across markets | "scan for squeeze setups on crypto" |
+
+## PineScript Indicator Collection
+
+### 1. Alpha Squeeze Momentum (`alpha_squeeze_momentum.pine`)
+**Inspired by**: Trading Alpha HTF/LTF Suite
+**What it does**: Detects volatility compression (Bollinger inside Keltner) and predicts breakout direction using momentum
+**Key signals**:
+- Yellow background = high energy squeeze (compression > 6 bars)
+- Orange dots = squeeze active
+- Green dots = squeeze off (fired)
+- Green/red histogram = momentum direction and strength
+- Triangle arrows = breakout direction when squeeze fires
+**Best for**: All markets. Especially powerful on crypto and WTI daily/4H
+**Parameters**: BB(20,2.0), KC(20,1.5), Momentum(20)
+
+### 2. Alpha Trend System (`alpha_trend_system.pine`)
+**Inspired by**: Trading Alpha Trend VIP + AlphaTrend by KivancOzbilgic
+**What it does**: Dual micro/macro trend analysis with ATR trailing stops. Eliminates fakeouts by requiring both scales to confirm
+**Key signals**:
+- Bar colors: bright green (strong bull) → gray (neutral) → bright red (strong bear)
+- Micro trend dots: earliest signal of changing dynamics
+- Confirmed reversal labels: micro + trail both confirm
+- Yellow diamonds: potential tops/bottoms (early warning)
+- Trend cloud between fast and mid MAs
+**Best for**: All markets. Swing trading on Daily/4H
+**Parameters**: Macro EMA(200), Mid EMA(55), Micro EMA(21), ATR(14, 1.0)
+
+### 3. Wick Analysis Pro (`wick_analysis_pro.pine`)
+**Inspired by**: Wicks Trading System + ICT Methodology
+**What it does**: Detects wick rejections, liquidity sweeps, wick fill zones, and multi-wick confluence
+**Key signals**:
+- Triangle up/down = strong wick rejection (score 3+/5)
+- Yellow diamonds = ICT liquidity sweep detected
+- Labeled signals with score out of 5
+- Dotted boxes = wick fill probability zones
+**Score components**: Wick ratio + volume confirmation + liquidity sweep + zone accumulation + close direction
+**Best for**: Forex and crypto. Works on all timeframes, best on 4H/Daily
+
+### 4. InvestAnswers ATR-DCA System (`invest_answers_atr_dca.pine`)
+**Inspired by**: James Mullarney's ATR + DCAS methodology
+**What it does**: ATR-based trading range with smart DCA zone detection and risk management
+**Key signals**:
+- Yellow band = inner trading range (normal volatility)
+- Orange band = extreme range (mean-reversion zone)
+- Green DCA zone levels = progressive discount buying zones
+- "DCA" labels = smart entry (discount zone + RSI oversold + momentum turning)
+- "TP" labels = take profit (range extreme + RSI overbought + fading momentum)
+- Red "X" = risk warning (overextended + divergence)
+**Best for**: Crypto (BTC, ETH, SOL), disruptive tech stocks. Swing/position trading
+**Parameters**: ATR(14), Range EMA(21), Inner mult(1.5), Outer mult(2.5), EMAs 21/55/200
+
+### 5. Alpha Confirmation Suite (`alpha_confirmation_suite.pine`)
+**Inspired by**: Trading Alpha Confirmation indicators
+**What it does**: Custom RSI with momentum lines, institutional thrust measurement, and divergence detection
+**Key signals**:
+- RSI line with fast/slow momentum overlay (cross = momentum shift)
+- Column histogram = Alpha Thrust (institutional buying/selling pressure)
+- "BULL DIV" / "BEAR DIV" labels = regular divergences
+- Small triangles = hidden divergences (trend continuation)
+- Background highlight on RSI overbought/oversold
+- Confirmation score 0-5 for bull/bear probability
+**Best for**: Confirmation of setups from other indicators. All markets
+**Parameters**: RSI(14), Fast momentum(5), Slow momentum(13), Thrust(14,3)
+
+### 6. TD Sequential 9 (`td_sequential_9.pine`)
+**Inspired by**: Tom DeMark's TD Sequential (used in Trading Alpha's TD9 system)
+**What it does**: Counts consecutive closes vs 4-bar-ago closes to detect exhaustion
+**Key signals**:
+- Numbers 1-9 above/below candles (setup phase)
+- "9" with background highlight = potential exhaustion
+- "9✓" = perfected setup (higher confidence)
+- Countdown 1-13 after setup completes
+- "13" = trend exhaustion confirmed
+**IMPORTANT**: Use privately only — do not publish on TradingView (DeMark trademark)
+**Best for**: All markets. Timing entries at exhaustion points. Daily/Weekly
+
+### 7. Multi-Market Dashboard (`multi_market_dashboard.pine`)
+**What it does**: Combines ALL indicator signals into one dashboard with net score
+**Key features**:
+- Status table showing every indicator's current state
+- Net score histogram (-10 to +10)
+- Squeeze, RSI, MACD, ADX, Wick, Volume, TD9, OBV all in one view
+- Yellow background = active squeeze
+**Best for**: Quick overview of any asset's technical picture
+
+## Indicator Effectiveness by Market
+
+### WTI Crude Oil — Best Indicator Stack
+1. Alpha Trend System (EMA 20/50/200 for persistent trends)
+2. Alpha Squeeze Momentum (catches breakouts after OPEC/inventory compression)
+3. Alpha Confirmation Suite (ADX confirms trend strength)
+4. RSI(14) at 40/60 levels (trend-following mode, NOT 30/70)
+
+### Bitcoin — Best Indicator Stack
+1. Alpha Squeeze Momentum (volatility compression is incredibly powerful here)
+2. InvestAnswers ATR-DCA (DCA zones + range analysis)
+3. Wick Analysis Pro (liquidity sweeps very common in crypto)
+4. TD Sequential 9 (exhaustion signals work well on BTC)
+
+### Forex — Best Indicator Stack
+1. Wick Analysis Pro (wick rejections at key levels)
+2. Alpha Confirmation Suite (RSI divergences + institutional thrust)
+3. Alpha Trend System (MA alignment for trend context)
+4. Alpha Squeeze Momentum (for breakout timing)
+
+### Equities — Best Indicator Stack
+1. Alpha Trend System (SMA 50/200 golden/death cross)
+2. Alpha Confirmation Suite (volume thrust for institutional detection)
+3. Multi-Market Dashboard (quick earnings/event assessment)
+4. TD Sequential 9 (timing entries at exhaustion)
+
+## Open Source Resources for Continuous Improvement
+
+### Python Libraries (for backtesting)
+- `pandas-ta`: 130+ indicators — pip install pandas_ta
+- `ta-lib`: Industry standard — pip install TA-Lib
+- `vectorbt`: Vectorized backtesting — pip install vectorbt
+- `jesse`: Full trading framework — pip install jesse
+
+### GitHub Repos to Watch
+- `freqtrade/freqtrade` — Crypto trading bot with community strategies
+- `jesse-ai/jesse` — Python framework with tested strategies
+- `Drakkar-Software/OctoBot` — Open-source crypto trading
+- `GiustiRo/squeezem-adx-ttm` — PineScript squeeze + ADX + TTM
+
+### TradingView Creators to Follow
+- KivancOzbilgic (AlphaTrend, Trend Magic)
+- LazyBear (Squeeze Momentum original)
+- LuxAlgo (Smart Money Concepts)
+- AlgoAlpha (Advanced oscillators)
+- ChrisMoody (Volume-based indicators)
+
+## System Cross-Reference
+
+| Indicator | Trading Alpha | Invest Answers | Wicks Trading |
+|-----------|:---:|:---:|:---:|
+| Squeeze Momentum | ✅ Core | — | — |
+| Trend MAs | ✅ Trend Bars | ✅ EMA 21/55/200 | ✅ Trend context |
+| ATR Range | ✅ HTF/LTF | ✅ Core | — |
+| RSI + Divergence | ✅ Alpha RSI | ✅ Custom RSI | ✅ Confluence |
+| Wick Analysis | — | — | ✅ Core |
+| TD Sequential | ✅ TD9 | — | — |
+| Volume/Thrust | ✅ Alpha Thrust | — | ✅ Vol confirm |
+| Fibonacci | — | — | ✅ Fib + Wick |
+| DCA Zones | — | ✅ DCAS | — |
+| ICT Liquidity | — | — | ✅ Sweep detect |

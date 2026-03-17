@@ -1,0 +1,208 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Alpha Trend System - Inspired by Trading Alpha's Trend VIP + AlphaTrend methodology
+// Dual micro/macro trend analysis with ATR trailing stops
+// Eliminates fakeouts by requiring both micro and macro confirmation
+
+//@version=5
+indicator("Alpha Trend System", shorttitle="ATS", overlay=true)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Macro Trend (Slow)
+macroLength  = input.int(200, "Macro MA Length", minval=1, group="Macro Trend")
+macroType    = input.string("EMA", "Macro MA Type", options=["SMA", "EMA", "WMA", "HMA"], group="Macro Trend")
+
+// Micro Trend (Fast)
+microLength  = input.int(21, "Micro MA Length", minval=1, group="Micro Trend")
+microType    = input.string("EMA", "Micro MA Type", options=["SMA", "EMA", "WMA", "HMA"], group="Micro Trend")
+
+// Mid Trend
+midLength    = input.int(55, "Mid MA Length", minval=1, group="Mid Trend")
+midType      = input.string("EMA", "Mid MA Type", options=["SMA", "EMA", "WMA", "HMA"], group="Mid Trend")
+
+// ATR Trailing Stop
+atrLength    = input.int(14, "ATR Length", minval=1, group="ATR Trailing Stop")
+atrMult      = input.float(1.0, "ATR Multiplier", minval=0.1, step=0.1, group="ATR Trailing Stop")
+
+// Momentum Filter
+useMFI       = input.bool(true, "Use MFI (uncheck for no-volume assets)", group="Momentum")
+mfiLength    = input.int(14, "MFI/RSI Length", minval=1, group="Momentum")
+
+// Display
+showMicro    = input.bool(true, "Show Micro Trend Dots", group="Display")
+showCloud    = input.bool(true, "Show Trend Cloud", group="Display")
+showTrail    = input.bool(true, "Show ATR Trailing Stop", group="Display")
+
+// ═══════════════════════════════════════════════════
+// MA CALCULATION FUNCTION
+// ═══════════════════════════════════════════════════
+
+hma(src, len) =>
+    ta.wma(2 * ta.wma(src, len / 2) - ta.wma(src, len), math.round(math.sqrt(len)))
+
+calcMA(src, len, maType) =>
+    switch maType
+        "SMA" => ta.sma(src, len)
+        "EMA" => ta.ema(src, len)
+        "WMA" => ta.wma(src, len)
+        "HMA" => hma(src, len)
+        => ta.ema(src, len)
+
+// ═══════════════════════════════════════════════════
+// TREND CALCULATIONS
+// ═══════════════════════════════════════════════════
+
+// Moving Averages
+macroMA = calcMA(close, macroLength, macroType)
+midMA   = calcMA(close, midLength, midType)
+microMA = calcMA(close, microLength, microType)
+
+// ═══════════════════════════════════════════════════
+// ATR TRAILING STOP (AlphaTrend Style)
+// ═══════════════════════════════════════════════════
+
+atrVal = ta.atr(atrLength)
+
+// Momentum source (MFI if volume available, RSI otherwise)
+momVal = useMFI ? ta.mfi(hlc3, mfiLength) : ta.rsi(close, mfiLength)
+
+// AlphaTrend calculation
+// Uptrend: trail below price by ATR distance when momentum > 50
+// Downtrend: trail above price by ATR distance when momentum <= 50
+var float alphaTrail = na
+upperTrail = low - atrVal * atrMult
+lowerTrail = high + atrVal * atrMult
+
+if momVal >= 50
+    alphaTrail := math.max(nz(alphaTrail[1]), upperTrail)
+else
+    alphaTrail := math.min(nz(alphaTrail[1]), lowerTrail)
+
+// Offset line for crossover signals
+alphaTrail2 = alphaTrail[2]
+
+// ═══════════════════════════════════════════════════
+// TREND STATES
+// ═══════════════════════════════════════════════════
+
+// Macro trend
+macroUp   = close > macroMA
+macroDown = close < macroMA
+
+// Mid trend
+midUp     = close > midMA
+midDown   = close < midMA
+
+// Micro trend
+microUp   = close > microMA
+microDown = close < microMA
+
+// Alpha trail trend
+trailUp   = close > alphaTrail
+trailDown = close < alphaTrail
+
+// Combined trend score (-4 to +4)
+trendScore = (macroUp ? 1 : macroDown ? -1 : 0) +
+             (midUp   ? 1 : midDown   ? -1 : 0) +
+             (microUp ? 1 : microDown ? -1 : 0) +
+             (trailUp ? 1 : trailDown ? -1 : 0)
+
+// Trend strength classification
+strongBull = trendScore >= 3
+weakBull   = trendScore > 0 and trendScore < 3
+neutral    = trendScore == 0
+weakBear   = trendScore < 0 and trendScore > -3
+strongBear = trendScore <= -3
+
+// ═══════════════════════════════════════════════════
+// REVERSAL / TOP / BOTTOM SIGNALS
+// ═══════════════════════════════════════════════════
+
+// Micro trend flip (earliest signal)
+microFlipBull = microUp and not microUp[1]
+microFlipBear = microDown and not microDown[1]
+
+// Alpha trail crossover signals
+trailBuy  = ta.crossover(alphaTrail, alphaTrail2)
+trailSell = ta.crossunder(alphaTrail, alphaTrail2)
+
+// Confirmed reversal: micro flips AND trail confirms
+confirmedBull = microFlipBull and trailUp
+confirmedBear = microFlipBear and trailDown
+
+// Potential top: micro turns bearish while macro still bullish
+potentialTop    = microFlipBear and macroUp
+potentialBottom = microFlipBull and macroDown
+
+// ═══════════════════════════════════════════════════
+// TREND BAR COLORS (Trading Alpha Style)
+// ═══════════════════════════════════════════════════
+
+barCol = strongBull ? color.new(#00E676, 0) :  // bright green
+         weakBull   ? color.new(#B2FF59, 0) :  // light green
+         neutral    ? color.new(#BDBDBD, 0) :  // gray
+         weakBear   ? color.new(#FF8A80, 0) :  // light red
+         strongBear ? color.new(#FF1744, 0) :  // bright red
+         color.gray
+
+barcolor(barCol)
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Moving Averages
+pMacro = plot(macroMA, "Macro MA", color.new(#FF6D00, 30), linewidth=3)
+pMid   = plot(midMA, "Mid MA", color.new(#2979FF, 30), linewidth=2)
+pMicro = plot(microMA, "Micro MA", color.new(#00E676, 50), linewidth=1)
+
+// Trend cloud between micro and mid
+fill(pMicro, pMid,
+     microMA > midMA ? color.new(#00E676, 85) : color.new(#FF1744, 85),
+     title="Trend Cloud")
+
+// ATR Trailing Stop
+trailColor = trailUp ? color.new(#00E676, 20) : color.new(#FF1744, 20)
+plot(showTrail ? alphaTrail : na, "Alpha Trail", trailColor, linewidth=2, style=plot.style_stepline_diamond)
+
+// ═══════════════════════════════════════════════════
+// MICRO TREND DOTS (Trading Alpha Style)
+// ═══════════════════════════════════════════════════
+
+// Small dots above/below candles showing micro trend state
+plotshape(showMicro and microUp and not microUp[1], "Micro Bull",
+          shape.circle, location.belowbar, color.new(#00E676, 0), size=size.tiny)
+plotshape(showMicro and microDown and not microDown[1], "Micro Bear",
+          shape.circle, location.abovebar, color.new(#FF1744, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// REVERSAL SIGNALS
+// ═══════════════════════════════════════════════════
+
+plotshape(confirmedBull, "Confirmed Bull Reversal",
+          shape.labelup, location.belowbar, color.new(#00C853, 0),
+          text="▲", textcolor=color.white, size=size.small)
+
+plotshape(confirmedBear, "Confirmed Bear Reversal",
+          shape.labeldown, location.abovebar, color.new(#D50000, 0),
+          text="▼", textcolor=color.white, size=size.small)
+
+plotshape(potentialTop, "Potential Top",
+          shape.diamond, location.abovebar, color.new(#FFD600, 0), size=size.tiny)
+
+plotshape(potentialBottom, "Potential Bottom",
+          shape.diamond, location.belowbar, color.new(#FFD600, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(confirmedBull, "Confirmed Bullish Reversal", "Confirmed bullish reversal — micro + trail aligned")
+alertcondition(confirmedBear, "Confirmed Bearish Reversal", "Confirmed bearish reversal — micro + trail aligned")
+alertcondition(potentialTop, "Potential Top Warning", "Micro trend flipped bearish while macro still bullish — potential top")
+alertcondition(potentialBottom, "Potential Bottom Warning", "Micro trend flipped bullish while macro still bearish — potential bottom")
+alertcondition(strongBull and not strongBull[1], "Strong Bullish Trend", "All indicators aligned bullish — strong trend")
+alertcondition(strongBear and not strongBear[1], "Strong Bearish Trend", "All indicators aligned bearish — strong downtrend")

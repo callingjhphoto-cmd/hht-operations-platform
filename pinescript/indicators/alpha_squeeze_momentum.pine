@@ -1,0 +1,142 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Alpha Squeeze Momentum - Inspired by Trading Alpha HTF/LTF Suite
+// Detects volatility compression (Bollinger inside Keltner) and momentum direction
+// Use: Identifies squeeze conditions before explosive breakout moves
+
+//@version=5
+indicator("Alpha Squeeze Momentum", shorttitle="ASM", overlay=false)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Bollinger Band Settings
+bbLength    = input.int(20, "BB Length", minval=1, group="Bollinger Bands")
+bbMult      = input.float(2.0, "BB StdDev Multiplier", minval=0.1, step=0.1, group="Bollinger Bands")
+
+// Keltner Channel Settings
+kcLength    = input.int(20, "KC Length", minval=1, group="Keltner Channels")
+kcMult      = input.float(1.5, "KC ATR Multiplier", minval=0.1, step=0.1, group="Keltner Channels")
+
+// Momentum Settings
+momLength   = input.int(20, "Momentum Length", minval=1, group="Momentum")
+momSource   = input.source(close, "Momentum Source", group="Momentum")
+
+// Visual Settings
+showBg      = input.bool(true, "Show Squeeze Background", group="Display")
+showArrows  = input.bool(true, "Show Breakout Arrows", group="Display")
+
+// ═══════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════
+
+// Bollinger Bands
+bbBasis     = ta.sma(close, bbLength)
+bbDev       = bbMult * ta.stdev(close, bbLength)
+bbUpper     = bbBasis + bbDev
+bbLower     = bbBasis - bbDev
+
+// Keltner Channels
+kcBasis     = ta.sma(close, kcLength)
+kcRange     = ta.atr(kcLength)
+kcUpper     = kcBasis + kcRange * kcMult
+kcLower     = kcBasis - kcRange * kcMult
+
+// Squeeze Detection
+// Squeeze ON = Bollinger Bands INSIDE Keltner Channels
+sqzOn       = bbLower > kcLower and bbUpper < kcUpper
+sqzOff      = bbLower < kcLower or bbUpper > kcUpper
+
+// No squeeze = neither condition
+noSqz       = not sqzOn and not sqzOff
+
+// Momentum Oscillator (Linear Regression of price vs midline)
+// This is the Carter TTM Squeeze momentum calculation
+highestHigh = ta.highest(high, momLength)
+lowestLow   = ta.lowest(low, momLength)
+donchianMid = (highestHigh + lowestLow) / 2
+smaMid      = ta.sma(close, momLength)
+delta       = momSource - (donchianMid + smaMid) / 2
+momentum    = ta.linreg(delta, momLength, 0)
+
+// Momentum direction and acceleration
+momRising   = momentum > momentum[1]
+momFalling  = momentum < momentum[1]
+momPositive = momentum > 0
+momNegative = momentum < 0
+
+// ═══════════════════════════════════════════════════
+// SQUEEZE STATE TRACKING
+// ═══════════════════════════════════════════════════
+
+// Track squeeze duration
+var int sqzCount = 0
+sqzCount := sqzOn ? sqzCount + 1 : 0
+
+// Squeeze just fired (was on, now off)
+sqzFired = sqzOff and sqzOn[1]
+
+// High energy squeeze (prolonged compression > 6 bars)
+highEnergy = sqzCount > 6
+
+// ═══════════════════════════════════════════════════
+// COLORS
+// ═══════════════════════════════════════════════════
+
+// Momentum bar colors (Trading Alpha style)
+// Positive & rising = bright green (strong bullish)
+// Positive & falling = dark green (weakening bullish)
+// Negative & falling = bright red (strong bearish)
+// Negative & rising = dark red (weakening bearish)
+momColor = momPositive and momRising  ? color.new(#00E676, 0) :  // bright green
+           momPositive and momFalling ? color.new(#1B5E20, 0) :  // dark green
+           momNegative and momFalling ? color.new(#FF1744, 0) :  // bright red
+           momNegative and momRising  ? color.new(#B71C1C, 0) :  // dark red
+           color.gray
+
+// Squeeze dot colors
+sqzColor = sqzOn and highEnergy ? color.new(#FFD600, 0) :  // yellow = high energy squeeze
+           sqzOn                ? color.new(#FF6D00, 0) :  // orange = squeeze on
+           sqzOff               ? color.new(#00E676, 0) :  // green = squeeze off
+           color.new(#616161, 0)                            // gray = no squeeze
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Momentum histogram
+plot(momentum, "Momentum", momColor, style=plot.style_histogram, linewidth=4)
+
+// Zero line
+hline(0, "Zero", color.new(#FFFFFF, 70), hline.style_dotted)
+
+// Squeeze dots on zero line
+plot(0, "Squeeze", sqzColor, style=plot.style_circles, linewidth=4)
+
+// Background highlight during squeeze
+bgcolor(showBg and sqzOn and highEnergy ? color.new(#FFD600, 90) :
+        showBg and sqzOn                ? color.new(#FF6D00, 95) :
+        na)
+
+// ═══════════════════════════════════════════════════
+// BREAKOUT ARROWS
+// ═══════════════════════════════════════════════════
+
+// Potential breakout arrow (squeeze fires + momentum direction)
+bullBreakout = sqzFired and momPositive
+bearBreakout = sqzFired and momNegative
+
+plotshape(showArrows and bullBreakout, "Bull Breakout", shape.triangleup,
+          location.bottom, color.new(#00E676, 0), size=size.small)
+plotshape(showArrows and bearBreakout, "Bear Breakout", shape.triangledown,
+          location.top, color.new(#FF1744, 0), size=size.small)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(sqzOn and not sqzOn[1], "Squeeze Started", "Squeeze detected — volatility compressing")
+alertcondition(sqzFired and momPositive, "Bullish Squeeze Fire", "Squeeze fired BULLISH — breakout imminent")
+alertcondition(sqzFired and momNegative, "Bearish Squeeze Fire", "Squeeze fired BEARISH — breakdown imminent")
+alertcondition(highEnergy and not highEnergy[1], "High Energy Squeeze", "High energy squeeze — extended compression detected")

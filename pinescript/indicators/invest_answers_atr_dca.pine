@@ -1,0 +1,211 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Invest Answers ATR + DCA System - Inspired by James Mullarney's methodology
+// ATR-based range trading + smart DCA timing + risk-adjusted momentum
+// Focus: Crypto (BTC, ETH, SOL), disruptive tech (TSLA, NVDA)
+
+//@version=5
+indicator("InvestAnswers ATR-DCA System", shorttitle="IA-DCA", overlay=true)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// ATR Range (Core Invest Answers indicator)
+atrLength    = input.int(14, "ATR Length", minval=1, group="ATR Range")
+atrMult1     = input.float(1.5, "Inner Range Multiplier", minval=0.5, step=0.1, group="ATR Range")
+atrMult2     = input.float(2.5, "Outer Range Multiplier", minval=0.5, step=0.1, group="ATR Range")
+atrBasis     = input.string("EMA", "Range Basis", options=["SMA", "EMA"], group="ATR Range")
+atrBasisLen  = input.int(21, "Range Basis Length", minval=1, group="ATR Range")
+
+// DCA Zones (Dollar Cost Average on Steroids concept)
+showDCA      = input.bool(true, "Show DCA Zones", group="DCA Zones")
+dcaLevels    = input.int(4, "DCA Zone Count", minval=2, maxval=8, group="DCA Zones")
+
+// RSI with Momentum Lines (IA custom RSI)
+rsiLength    = input.int(14, "RSI Length", minval=1, group="Momentum")
+rsiSmooth    = input.int(5, "RSI Smoothing", minval=1, group="Momentum")
+rsiOB        = input.float(70.0, "RSI Overbought", group="Momentum")
+rsiOS        = input.float(30.0, "RSI Oversold", group="Momentum")
+
+// Moving Averages (IA uses EMA 21/55/200)
+showMAs      = input.bool(true, "Show MAs", group="Moving Averages")
+ma1Len       = input.int(21, "Fast MA", minval=1, group="Moving Averages")
+ma2Len       = input.int(55, "Mid MA", minval=1, group="Moving Averages")
+ma3Len       = input.int(200, "Slow MA", minval=1, group="Moving Averages")
+
+// Risk Management
+showRisk     = input.bool(true, "Show Risk Zones", group="Risk Management")
+
+// ═══════════════════════════════════════════════════
+// ATR RANGE CALCULATIONS
+// ═══════════════════════════════════════════════════
+
+atrVal = ta.atr(atrLength)
+basis  = atrBasis == "EMA" ? ta.ema(close, atrBasisLen) : ta.sma(close, atrBasisLen)
+
+// Inner range (high probability trading zone)
+innerUpper = basis + atrVal * atrMult1
+innerLower = basis - atrVal * atrMult1
+
+// Outer range (extreme / mean-reversion zone)
+outerUpper = basis + atrVal * atrMult2
+outerLower = basis - atrVal * atrMult2
+
+// ═══════════════════════════════════════════════════
+// DCA ZONE CALCULATIONS
+// ═══════════════════════════════════════════════════
+
+// Generate DCA levels below current range (buy zones)
+// Each zone is progressively further below, representing better DCA entries
+dcaSpacing = (basis - outerLower) / dcaLevels
+
+dca1 = basis - dcaSpacing * 1
+dca2 = basis - dcaSpacing * 2
+dca3 = basis - dcaSpacing * 3
+dca4 = basis - dcaSpacing * 4
+
+// DCA zone signal: price enters a DCA zone
+inDCA1 = close <= dca1 and close > dca2
+inDCA2 = close <= dca2 and close > dca3
+inDCA3 = close <= dca3 and close > dca4
+inDCA4 = close <= dca4
+
+// ═══════════════════════════════════════════════════
+// MOMENTUM (Custom RSI with Smoothing)
+// ═══════════════════════════════════════════════════
+
+rsiRaw    = ta.rsi(close, rsiLength)
+rsiSmoothed = ta.sma(rsiRaw, rsiSmooth)
+
+// RSI momentum line (rate of change of RSI)
+rsiMom    = rsiSmoothed - rsiSmoothed[5]
+rsiAccel  = rsiMom - rsiMom[3]
+
+// RSI Divergence Detection
+// Bullish: price makes lower low, RSI makes higher low
+priceLow1 = ta.lowest(low, 14)
+priceLow2 = ta.lowest(low, 14)[14]
+rsiLow1   = ta.lowest(rsiRaw, 14)
+rsiLow2   = ta.lowest(rsiRaw, 14)[14]
+bullDiv   = priceLow1 < priceLow2 and rsiLow1 > rsiLow2
+
+// Bearish: price makes higher high, RSI makes lower high
+priceHi1  = ta.highest(high, 14)
+priceHi2  = ta.highest(high, 14)[14]
+rsiHi1    = ta.highest(rsiRaw, 14)
+rsiHi2    = ta.highest(rsiRaw, 14)[14]
+bearDiv   = priceHi1 > priceHi2 and rsiHi1 < rsiHi2
+
+// ═══════════════════════════════════════════════════
+// MOVING AVERAGES
+// ═══════════════════════════════════════════════════
+
+ma1 = ta.ema(close, ma1Len)
+ma2 = ta.ema(close, ma2Len)
+ma3 = ta.ema(close, ma3Len)
+
+// Trend alignment
+allBull = close > ma1 and ma1 > ma2 and ma2 > ma3
+allBear = close < ma1 and ma1 < ma2 and ma2 < ma3
+
+// ═══════════════════════════════════════════════════
+// RISK ZONES (Invest Answers Risk Management)
+// ═══════════════════════════════════════════════════
+
+// Extreme overextension (price far above outer range = high risk)
+overextendedUp   = close > outerUpper
+overextendedDown = close < outerLower
+
+// Position in range (0 = bottom, 100 = top)
+rangePct = outerUpper != outerLower ?
+           (close - outerLower) / (outerUpper - outerLower) * 100 : 50
+
+// Risk zones
+lowRisk     = rangePct < 25   // Bottom quartile = low risk to buy
+medRisk     = rangePct >= 25 and rangePct <= 75
+highRisk    = rangePct > 75   // Top quartile = high risk to buy
+
+// ═══════════════════════════════════════════════════
+// SIGNAL GENERATION
+// ═══════════════════════════════════════════════════
+
+// Smart DCA entry: price in DCA zone + RSI oversold + momentum turning up
+smartDCAEntry = (inDCA2 or inDCA3 or inDCA4) and
+                rsiRaw < rsiOS and
+                rsiMom > rsiMom[1]
+
+// Take profit signal: price at outer upper + RSI overbought + momentum fading
+takeProfitSignal = close > innerUpper and
+                   rsiRaw > rsiOB and
+                   rsiMom < rsiMom[1]
+
+// Risk warning: overextended + divergence
+riskWarning = overextendedUp and bearDiv
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// ATR Range bands
+pBasis = plot(basis, "Basis", color.new(#FFFFFF, 30), linewidth=2)
+pIU    = plot(innerUpper, "Inner Upper", color.new(#FFD600, 50), linewidth=1)
+pIL    = plot(innerLower, "Inner Lower", color.new(#FFD600, 50), linewidth=1)
+pOU    = plot(outerUpper, "Outer Upper", color.new(#FF6D00, 30), linewidth=1, style=plot.style_stepline)
+pOL    = plot(outerLower, "Outer Lower", color.new(#FF6D00, 30), linewidth=1, style=plot.style_stepline)
+
+// Range fills
+fill(pIU, pIL, color.new(#FFD600, 92), title="Inner Range")
+fill(pOU, pIU, color.new(#FF6D00, 95), title="Upper Extreme")
+fill(pIL, pOL, color.new(#00E676, 95), title="Lower Extreme (Buy Zone)")
+
+// DCA zone lines
+plot(showDCA ? dca1 : na, "DCA 1", color.new(#00E676, 60), linewidth=1, style=plot.style_cross)
+plot(showDCA ? dca2 : na, "DCA 2", color.new(#00C853, 50), linewidth=1, style=plot.style_cross)
+plot(showDCA ? dca3 : na, "DCA 3", color.new(#00BFA5, 40), linewidth=1, style=plot.style_cross)
+plot(showDCA ? dca4 : na, "DCA 4", color.new(#00B8D4, 30), linewidth=1, style=plot.style_cross)
+
+// Moving Averages
+plot(showMAs ? ma1 : na, "EMA 21", color.new(#00E676, 30), linewidth=1)
+plot(showMAs ? ma2 : na, "EMA 55", color.new(#2979FF, 30), linewidth=1)
+plot(showMAs ? ma3 : na, "EMA 200", color.new(#FF6D00, 30), linewidth=2)
+
+// ═══════════════════════════════════════════════════
+// SIGNAL MARKERS
+// ═══════════════════════════════════════════════════
+
+// Smart DCA entries
+plotshape(smartDCAEntry, "Smart DCA Entry",
+          shape.labelup, location.belowbar, color.new(#00E676, 0),
+          text="DCA", textcolor=color.white, size=size.small)
+
+// Take profit signals
+plotshape(takeProfitSignal, "Take Profit",
+          shape.labeldown, location.abovebar, color.new(#FFD600, 0),
+          text="TP", textcolor=color.black, size=size.small)
+
+// Risk warnings
+plotshape(riskWarning, "Risk Warning",
+          shape.xcross, location.abovebar, color.new(#FF1744, 0), size=size.small)
+
+// DCA zone background
+bgcolor(inDCA4 ? color.new(#00B8D4, 90) :
+        inDCA3 ? color.new(#00BFA5, 93) :
+        inDCA2 ? color.new(#00C853, 95) :
+        na, title="DCA Zone Highlight")
+
+// Overextended warning
+bgcolor(showRisk and overextendedUp ? color.new(#FF1744, 93) : na, title="Overextended Up")
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(smartDCAEntry, "Smart DCA Entry", "Smart DCA entry — price in discount zone with momentum turning")
+alertcondition(takeProfitSignal, "Take Profit Signal", "Take profit — price at range extreme with fading momentum")
+alertcondition(riskWarning, "Risk Warning", "Risk warning — overextended with bearish divergence")
+alertcondition(inDCA2 and not inDCA2[1], "DCA Zone 2 Entry", "Price entered DCA Zone 2")
+alertcondition(inDCA3 and not inDCA3[1], "DCA Zone 3 Entry", "Price entered DCA Zone 3 — deeper discount")
+alertcondition(inDCA4 and not inDCA4[1], "DCA Zone 4 Entry", "Price entered DCA Zone 4 — maximum discount")
+alertcondition(allBull and not allBull[1], "Full Bull Alignment", "All MAs aligned bullish (21 > 55 > 200)")
+alertcondition(allBear and not allBear[1], "Full Bear Alignment", "All MAs aligned bearish (21 < 55 < 200)")
