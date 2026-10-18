@@ -1,0 +1,208 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// IA Confluence Model — Part of IADSS (InvestAnswers Decision Support System)
+// Based on research: "Enhanced multi-banded Bollinger" with break/reintegration signals
+//
+// RESEARCH FINDINGS:
+// - Third-party reverse engineering: "signals are produced on breaks followed
+//   by a re-integration on one or multiple bands"
+// - Shows buy/sell arrows when price breaks outside Bollinger Bands then
+//   re-integrates back inside
+// - Configurable bias: bearish through neutral to bullish
+// - The real power: confluence with Trend + Mean Reversion + Optimized Trend
+//   "When you can align high WIN% in Trend, Reversion, and Confluence,
+//    you win in almost every situation"
+//
+// ACCURACY vs REAL: ~6/10 (core concept confirmed by third-party review)
+
+//@version=5
+indicator("IA Confluence Model", shorttitle="IA-CONF", overlay=true)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Multi-Band Bollinger Settings
+bbLen     = input.int(20, "BB Length", minval=5, group="Bollinger Bands")
+bbSrc     = input.source(close, "Source", group="Bollinger Bands")
+bbMult1   = input.float(1.0, "Band 1 StdDev", minval=0.5, step=0.25, group="Bollinger Bands")
+bbMult2   = input.float(2.0, "Band 2 StdDev", minval=1.0, step=0.25, group="Bollinger Bands")
+bbMult3   = input.float(3.0, "Band 3 StdDev", minval=1.5, step=0.25, group="Bollinger Bands")
+
+// Bias Configuration
+biasMode  = input.string("Neutral", "Signal Bias",
+            options=["Bearish", "Slightly Bearish", "Neutral", "Slightly Bullish", "Bullish"],
+            group="Bias",
+            tooltip="Bullish = more buy signals, fewer sell signals. Bearish = opposite.")
+
+// Reintegration Settings
+reintBars = input.int(5, "Max Bars Outside for Reintegration", minval=1, maxval=20, group="Signals",
+            tooltip="Price must re-enter within this many bars of breaking out")
+
+// Display
+showBands = input.bool(true, "Show All Bands", group="Display")
+showBG    = input.bool(true, "Show Zone Background", group="Display")
+
+// ═══════════════════════════════════════════════════
+// MULTI-BANDED BOLLINGER CALCULATION
+// ═══════════════════════════════════════════════════
+
+bbBasis = ta.sma(bbSrc, bbLen)
+bbDev   = ta.stdev(bbSrc, bbLen)
+
+// Band 1 (inner)
+bb1Up = bbBasis + bbDev * bbMult1
+bb1Dn = bbBasis - bbDev * bbMult1
+
+// Band 2 (standard)
+bb2Up = bbBasis + bbDev * bbMult2
+bb2Dn = bbBasis - bbDev * bbMult2
+
+// Band 3 (outer/extreme)
+bb3Up = bbBasis + bbDev * bbMult3
+bb3Dn = bbBasis - bbDev * bbMult3
+
+// ═══════════════════════════════════════════════════
+// BREAK & REINTEGRATION DETECTION
+// ═══════════════════════════════════════════════════
+
+// Track when price breaks outside each band
+// A "break" = close moves outside the band
+// A "reintegration" = close moves back inside the band within N bars
+
+// --- Band 1 breaks ---
+brokeAbove1 = close > bb1Up
+brokeBelowl = close < bb1Dn
+
+// Track bars since break
+var int barsSinceAbove1 = 999
+var int barsSinceBelow1 = 999
+
+barsSinceAbove1 := brokeAbove1 ? 0 : barsSinceAbove1 + 1
+barsSinceBelow1 := brokeBelowl ? 0 : barsSinceBelow1 + 1
+
+// Reintegration on Band 1
+reintBull1 = close > bb1Dn and close[1] <= bb1Dn[1] and barsSinceBelow1 <= reintBars
+reintBear1 = close < bb1Up and close[1] >= bb1Up[1] and barsSinceAbove1 <= reintBars
+
+// --- Band 2 breaks ---
+brokeAbove2 = close > bb2Up
+brokeBelow2 = close < bb2Dn
+
+var int barsSinceAbove2 = 999
+var int barsSinceBelow2 = 999
+
+barsSinceAbove2 := brokeAbove2 ? 0 : barsSinceAbove2 + 1
+barsSinceBelow2 := brokeBelow2 ? 0 : barsSinceBelow2 + 1
+
+reintBull2 = close > bb2Dn and close[1] <= bb2Dn[1] and barsSinceBelow2 <= reintBars
+reintBear2 = close < bb2Up and close[1] >= bb2Up[1] and barsSinceAbove2 <= reintBars
+
+// --- Band 3 breaks ---
+brokeAbove3 = close > bb3Up
+brokeBelow3 = close < bb3Dn
+
+var int barsSinceAbove3 = 999
+var int barsSinceBelow3 = 999
+
+barsSinceAbove3 := brokeAbove3 ? 0 : barsSinceAbove3 + 1
+barsSinceBelow3 := brokeBelow3 ? 0 : barsSinceBelow3 + 1
+
+reintBull3 = close > bb3Dn and close[1] <= bb3Dn[1] and barsSinceBelow3 <= reintBars
+reintBear3 = close < bb3Up and close[1] >= bb3Up[1] and barsSinceAbove3 <= reintBars
+
+// ═══════════════════════════════════════════════════
+// CONFLUENCE SCORING
+// ═══════════════════════════════════════════════════
+
+// More bands confirming = higher confidence
+// Reintegration on Band 3 (extreme) = strongest signal
+bullConfluence = (reintBull1 ? 1 : 0) + (reintBull2 ? 2 : 0) + (reintBull3 ? 3 : 0)
+bearConfluence = (reintBear1 ? 1 : 0) + (reintBear2 ? 2 : 0) + (reintBear3 ? 3 : 0)
+
+// ═══════════════════════════════════════════════════
+// BIAS ADJUSTMENT
+// ═══════════════════════════════════════════════════
+
+// Bias shifts the threshold for buy vs sell signals
+biasShift = switch biasMode
+    "Bearish"          => -2
+    "Slightly Bearish"  => -1
+    "Neutral"           => 0
+    "Slightly Bullish"  => 1
+    "Bullish"           => 2
+    => 0
+
+bullThreshold = math.max(1, 2 - biasShift)  // Lower threshold = more buy signals
+bearThreshold = math.max(1, 2 + biasShift)  // Lower threshold = more sell signals
+
+// Final signals after bias
+bullSignal = bullConfluence >= bullThreshold
+bearSignal = bearConfluence >= bearThreshold
+
+// Signal strength
+bullStrong = bullConfluence >= 4
+bearStrong = bearConfluence >= 4
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Bands
+pBasis = plot(bbBasis, "Basis", color.new(#FFFFFF, 40), linewidth=2)
+
+p1U = plot(bb1Up, "Band 1 Upper", showBands ? color.new(#FFD600, 60) : na, linewidth=1)
+p1D = plot(bb1Dn, "Band 1 Lower", showBands ? color.new(#FFD600, 60) : na, linewidth=1)
+p2U = plot(bb2Up, "Band 2 Upper", color.new(#FF6D00, 40), linewidth=1)
+p2D = plot(bb2Dn, "Band 2 Lower", color.new(#FF6D00, 40), linewidth=1)
+p3U = plot(bb3Up, "Band 3 Upper", showBands ? color.new(#FF1744, 30) : na, linewidth=1, style=plot.style_stepline)
+p3D = plot(bb3Dn, "Band 3 Lower", showBands ? color.new(#FF1744, 30) : na, linewidth=1, style=plot.style_stepline)
+
+// Band fills
+fill(p1U, p1D, color.new(#FFD600, 95), title="Band 1 Fill")
+fill(p2U, p1U, color.new(#FF6D00, 96), title="Upper Zone 1-2")
+fill(p1D, p2D, color.new(#00E676, 96), title="Lower Zone 1-2")
+fill(p3U, p2U, color.new(#FF1744, 96), title="Upper Extreme")
+fill(p2D, p3D, color.new(#00C853, 96), title="Lower Extreme")
+
+// Zone background
+bgcolor(showBG and brokeBelow3 ? color.new(#00E676, 88) :
+        showBG and brokeBelow2 ? color.new(#00E676, 93) :
+        showBG and brokeAbove3 ? color.new(#FF1744, 88) :
+        showBG and brokeAbove2 ? color.new(#FF1744, 93) : na,
+        title="Extreme Zone")
+
+// ═══════════════════════════════════════════════════
+// SIGNAL ARROWS (Break + Reintegration)
+// ═══════════════════════════════════════════════════
+
+// Buy arrows (reintegration from below)
+plotshape(bullStrong, "Strong Buy Reintegration",
+          shape.labelup, location.belowbar, color.new(#00C853, 0),
+          text="BUY", textcolor=color.white, size=size.small)
+plotshape(bullSignal and not bullStrong, "Buy Reintegration",
+          shape.triangleup, location.belowbar, color.new(#69F0AE, 0), size=size.small)
+
+// Sell arrows (reintegration from above)
+plotshape(bearStrong, "Strong Sell Reintegration",
+          shape.labeldown, location.abovebar, color.new(#D50000, 0),
+          text="SELL", textcolor=color.white, size=size.small)
+plotshape(bearSignal and not bearStrong, "Sell Reintegration",
+          shape.triangledown, location.abovebar, color.new(#EF9A9A, 0), size=size.small)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(bullStrong, "Strong Confluence Buy",
+               "Confluence: STRONG BUY — multi-band reintegration from below. High conviction.")
+alertcondition(bearStrong, "Strong Confluence Sell",
+               "Confluence: STRONG SELL — multi-band reintegration from above. High conviction.")
+alertcondition(bullSignal, "Confluence Buy",
+               "Confluence: BUY — band reintegration from below.")
+alertcondition(bearSignal, "Confluence Sell",
+               "Confluence: SELL — band reintegration from above.")
+alertcondition(brokeBelow3, "Extreme Oversold Break",
+               "Price broke below Band 3 — extreme oversold. Watch for reintegration buy.")
+alertcondition(brokeAbove3, "Extreme Overbought Break",
+               "Price broke above Band 3 — extreme overbought. Watch for reintegration sell.")

@@ -1,0 +1,360 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// WaveTrend Oscillator v1 — Institutional reversal detection oscillator
+//
+// FORMULA (LazyBear canonical):
+//   AP  = hlc3
+//   ESA = EMA(AP, channelLen)
+//   D   = EMA(|AP - ESA|, channelLen)
+//   CI  = (AP - ESA) / (0.015 * D)
+//   WT1 = EMA(CI, avgLen)        — main WaveTrend line
+//   WT2 = SMA(WT1, signalLen)    — signal line
+//
+// The 0.015 scaling constant normalises the channel index so that
+// typical readings fall within the -100 to +100 range. This is a
+// fixed part of the original formula and should not be changed.
+//
+// MARKET-SPECIFIC GUIDANCE:
+//   Crypto (BTC/ETH)  : Channel 10, Avg 21 — default works well.
+//                        24/7 market, high vol. Use 4H/Daily.
+//                        Extended OB runs common; wait for cross.
+//   WTI Crude Oil     : Channel 10, Avg 21 on Daily. Combine with
+//                        ADX > 25 filter to avoid chop. Event risk
+//                        (OPEC, inventories) can override signals.
+//   Forex             : Channel 10, Avg 21 on 4H/Daily. Session
+//                        overlaps (London/NY) produce best signals.
+//                        Lower timeframes generate more noise.
+//   Equities          : Channel 10, Avg 21 on Daily/Weekly.
+//                        Strong trends can keep WT1 overbought for
+//                        weeks — use divergence, not raw level.
+//
+// TIMEFRAME GUIDANCE:
+//   Scalping  :  1m-5m  — consider Channel 9, Avg 12 (faster)
+//   Intraday  : 15m-1H  — default 10/21 works
+//   Swing     :  4H-D   — default 10/21 (most reliable)
+//   Position  :  W-M    — consider Channel 12, Avg 26 (smoother)
+//
+// SIGNAL TYPES:
+//   1. WT1/WT2 cross in OB/OS zone  — primary reversal signal
+//   2. Divergence (price vs WT1)     — early warning of reversal
+//   3. Zero-line cross               — trend direction change
+//   4. Extreme zone entry/exit       — volatility regime shift
+//
+// KNOWN FAILURE MODES:
+//   - Strong trending markets: WT1 can stay overbought/oversold for
+//     extended periods. Do not fade the trend on levels alone.
+//   - Low volatility / flat markets: signals cluster near zero with
+//     many false crosses. Combine with ATR or squeeze filter.
+//   - Event-driven moves: fundamental catalysts override technicals.
+
+//@version=5
+indicator("WaveTrend Oscillator", shorttitle="WT", overlay=false,
+     max_labels_count=500, max_lines_count=500)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Core WaveTrend Parameters
+channelLen = input.int(10, "Channel Length", minval=1,
+     tooltip="EMA period for baseline (ESA) and mean deviation (D). " +
+     "Lower = more responsive but noisier. Default 10 suits most markets.",
+     group="WaveTrend")
+avgLen     = input.int(21, "Average Length", minval=1,
+     tooltip="EMA period applied to Channel Index to produce WT1. " +
+     "Lower = faster signals, more whipsaws. Default 21 is standard.",
+     group="WaveTrend")
+signalLen  = input.int(4, "Signal Length", minval=1,
+     tooltip="SMA period applied to WT1 to produce the signal line WT2. " +
+     "Default 4. Increasing adds lag but fewer false crosses.",
+     group="WaveTrend")
+
+// Overbought / Oversold Levels
+obLevel    = input.int(60, "Overbought Level", minval=1,
+     tooltip="Standard overbought threshold. Crosses below this " +
+     "in the OB zone generate sell dots. Default 60.",
+     group="Levels")
+osLevel    = input.int(-60, "Oversold Level", maxval=-1,
+     tooltip="Standard oversold threshold. Crosses above this " +
+     "in the OS zone generate buy dots. Default -60.",
+     group="Levels")
+obExtreme  = input.int(80, "Extreme Overbought", minval=1,
+     tooltip="Extreme overbought — background shading activates. " +
+     "Signals here carry higher conviction. Default 80.",
+     group="Levels")
+osExtreme  = input.int(-80, "Extreme Oversold", maxval=-1,
+     tooltip="Extreme oversold — background shading activates. " +
+     "Signals here carry higher conviction. Default -80.",
+     group="Levels")
+
+// Display Options
+showHist   = input.bool(true, "Show Histogram", group="Display")
+showDots   = input.bool(true, "Show Signal Dots", group="Display")
+showDiv    = input.bool(true, "Show Divergences", group="Display")
+showBg     = input.bool(true, "Show Extreme Zone Background", group="Display")
+showZero   = input.bool(true, "Show Zero Line", group="Display")
+
+// Divergence Settings
+divLookback  = input.int(30, "Divergence Lookback", minval=5, maxval=100,
+     tooltip="How many bars back to search for pivot points when " +
+     "detecting divergence. Larger = catches wider divergences but " +
+     "may be less timely.",
+     group="Divergence")
+divPivotLegs = input.int(5, "Pivot Legs", minval=2, maxval=20,
+     tooltip="Number of bars on each side of a pivot high/low. " +
+     "Larger = more confirmed pivots but fewer detections.",
+     group="Divergence")
+
+// ═══════════════════════════════════════════════════
+// WAVETREND CALCULATION
+// ═══════════════════════════════════════════════════
+
+// Step 1: Average Price
+ap = hlc3
+
+// Step 2: Exponential Smoothing of AP (baseline)
+esa = ta.ema(ap, channelLen)
+
+// Step 3: Mean Deviation — smoothed absolute distance from baseline
+d = ta.ema(math.abs(ap - esa), channelLen)
+
+// Step 4: Channel Index — normalised deviation
+// The 0.015 constant scales readings into the approx -100/+100 range.
+// Guard against division by zero when D is flat (e.g. constant price).
+ci = d != 0 ? (ap - esa) / (0.015 * d) : 0.0
+
+// Step 5: WT1 (main line) — smoothed Channel Index
+wt1 = ta.ema(ci, avgLen)
+
+// Step 6: WT2 (signal line) — SMA of WT1
+wt2 = ta.sma(wt1, signalLen)
+
+// Histogram
+hist = wt1 - wt2
+
+// ═══════════════════════════════════════════════════
+// CROSS DETECTION
+// ═══════════════════════════════════════════════════
+
+crossUp   = ta.crossover(wt1, wt2)
+crossDown = ta.crossunder(wt1, wt2)
+
+// Crosses in OB/OS zones — high-conviction reversal signals
+crossUpOS    = crossUp and wt2 <= osLevel      // bullish cross in oversold
+crossDownOB  = crossDown and wt2 >= obLevel     // bearish cross in overbought
+
+// Crosses in extreme zones — highest conviction
+crossUpExtOS   = crossUp and wt2 <= osExtreme
+crossDownExtOB = crossDown and wt2 >= obExtreme
+
+// Zero-line crosses
+crossAboveZero = ta.crossover(wt1, 0.0)
+crossBelowZero = ta.crossunder(wt1, 0.0)
+
+// ═══════════════════════════════════════════════════
+// DIVERGENCE DETECTION
+// ═══════════════════════════════════════════════════
+
+// Pivot detection on WT1
+pivotHigh = ta.pivothigh(wt1, divPivotLegs, divPivotLegs)
+pivotLow  = ta.pivotlow(wt1, divPivotLegs, divPivotLegs)
+
+// Track previous pivot values and bar indices.
+// We use var to persist across bars and only update on new pivots.
+
+var float prevPivotHighWT   = na
+var float prevPivotHighPrice = na
+var int   prevPivotHighBar  = na
+var float currPivotHighWT   = na
+var float currPivotHighPrice = na
+var int   currPivotHighBar  = na
+
+var float prevPivotLowWT    = na
+var float prevPivotLowPrice  = na
+var int   prevPivotLowBar   = na
+var float currPivotLowWT    = na
+var float currPivotLowPrice  = na
+var int   currPivotLowBar   = na
+
+// Offset for pivot detection: pivots are confirmed divPivotLegs bars ago
+pivotOffset = divPivotLegs
+
+if not na(pivotHigh)
+    prevPivotHighWT    := currPivotHighWT
+    prevPivotHighPrice := currPivotHighPrice
+    prevPivotHighBar   := currPivotHighBar
+    currPivotHighWT    := pivotHigh
+    currPivotHighPrice := high[pivotOffset]
+    currPivotHighBar   := bar_index - pivotOffset
+
+if not na(pivotLow)
+    prevPivotLowWT    := currPivotLowWT
+    prevPivotLowPrice := currPivotLowPrice
+    prevPivotLowBar   := currPivotLowBar
+    currPivotLowWT    := pivotLow
+    currPivotLowPrice := low[pivotOffset]
+    currPivotLowBar   := bar_index - pivotOffset
+
+// Regular Bullish Divergence: price makes lower low, WT1 makes higher low
+bullDiv = false
+if showDiv and not na(pivotLow) and not na(prevPivotLowWT) and not na(currPivotLowWT)
+    barDist = currPivotLowBar - prevPivotLowBar
+    if barDist > 0 and barDist <= divLookback
+        // Price: lower low, WT1: higher low
+        if currPivotLowPrice < prevPivotLowPrice and currPivotLowWT > prevPivotLowWT
+            // Only flag if we are in or near oversold territory
+            if currPivotLowWT < osLevel * 0.5
+                bullDiv := true
+
+// Regular Bearish Divergence: price makes higher high, WT1 makes lower high
+bearDiv = false
+if showDiv and not na(pivotHigh) and not na(prevPivotHighWT) and not na(currPivotHighWT)
+    barDist = currPivotHighBar - prevPivotHighBar
+    if barDist > 0 and barDist <= divLookback
+        // Price: higher high, WT1: lower high
+        if currPivotHighPrice > prevPivotHighPrice and currPivotHighWT < prevPivotHighWT
+            // Only flag if we are in or near overbought territory
+            if currPivotHighWT > obLevel * 0.5
+                bearDiv := true
+
+// ═══════════════════════════════════════════════════
+// PLOTTING
+// ═══════════════════════════════════════════════════
+
+// Horizontal reference levels
+hline(obExtreme, "Extreme OB", color=color.new(color.red, 70), linestyle=hline.style_dotted)
+hline(obLevel,   "Overbought", color=color.new(color.red, 50), linestyle=hline.style_dashed)
+plot(showZero ? 0.0 : na, "Zero Line", color=color.new(color.gray, 60), linewidth=1)
+hline(osLevel,   "Oversold",   color=color.new(color.green, 50), linestyle=hline.style_dashed)
+hline(osExtreme, "Extreme OS", color=color.new(color.green, 70), linestyle=hline.style_dotted)
+
+// WT1 and WT2 lines
+plot(wt1, "WT1", color=color.new(#00bcd4, 0), linewidth=2)  // cyan
+plot(wt2, "WT2", color=color.new(#ff9800, 0), linewidth=1)  // orange
+
+// Histogram
+histColor = hist >= 0 ?
+     (hist > hist[1] ? color.new(#26a69a, 30) : color.new(#26a69a, 60)) :
+     (hist < hist[1] ? color.new(#ef5350, 30) : color.new(#ef5350, 60))
+plot(showHist ? hist : na, "Histogram", color=histColor, style=plot.style_columns)
+
+// Signal dots — green for bullish cross in OS, red for bearish cross in OB
+// Use float series (na when no signal) so shapes position correctly on the y-axis.
+plotshape(showDots and crossUpOS ? wt2 : na, "Buy Signal",
+     shape.circle, location.absolute, color=color.new(#4caf50, 0),
+     size=size.tiny, offset=0)
+plotshape(showDots and crossDownOB ? wt2 : na, "Sell Signal",
+     shape.circle, location.absolute, color=color.new(#f44336, 0),
+     size=size.tiny, offset=0)
+
+// Extreme-zone signal dots — larger, diamond shape for highest conviction
+plotshape(showDots and crossUpExtOS ? wt2 : na, "Strong Buy",
+     shape.diamond, location.absolute, color=color.new(#00e676, 0),
+     size=size.small, offset=0)
+plotshape(showDots and crossDownExtOB ? wt2 : na, "Strong Sell",
+     shape.diamond, location.absolute, color=color.new(#ff1744, 0),
+     size=size.small, offset=0)
+
+// Divergence markers — positioned at the pivot WT1 value
+plotshape(showDiv and bullDiv ? currPivotLowWT : na, "Bullish Divergence",
+     shape.triangleup, location.absolute, color=color.new(#00e676, 0),
+     size=size.small, text="Bull Div", textcolor=color.new(#00e676, 0),
+     offset=-pivotOffset)
+plotshape(showDiv and bearDiv ? currPivotHighWT : na, "Bearish Divergence",
+     shape.triangledown, location.absolute, color=color.new(#ff1744, 0),
+     size=size.small, text="Bear Div", textcolor=color.new(#ff1744, 0),
+     offset=-pivotOffset)
+
+// Divergence lines (drawn on the WT1 plot)
+if showDiv and bullDiv and not na(prevPivotLowBar) and not na(currPivotLowBar)
+    line.new(prevPivotLowBar, prevPivotLowWT,
+         currPivotLowBar, currPivotLowWT,
+         color=color.new(#00e676, 20), width=2, style=line.style_dashed)
+
+if showDiv and bearDiv and not na(prevPivotHighBar) and not na(currPivotHighBar)
+    line.new(prevPivotHighBar, prevPivotHighWT,
+         currPivotHighBar, currPivotHighWT,
+         color=color.new(#ff1744, 20), width=2, style=line.style_dashed)
+
+// Background shading for extreme zones
+obBg = showBg and wt1 >= obExtreme ? color.new(color.red, 90) : na
+osBg = showBg and wt1 <= osExtreme ? color.new(color.green, 90) : na
+bgcolor(obBg, title="Extreme OB Background")
+bgcolor(osBg, title="Extreme OS Background")
+
+// ═══════════════════════════════════════════════════
+// ALERT CONDITIONS
+// ═══════════════════════════════════════════════════
+
+// Primary signals — crosses in OB/OS zones
+alertcondition(crossUpOS,
+     title="Bullish Cross (Oversold)",
+     message="WaveTrend: Bullish cross in oversold zone (WT2 <= " +
+     str.tostring(osLevel) + "). Potential long entry.")
+
+alertcondition(crossDownOB,
+     title="Bearish Cross (Overbought)",
+     message="WaveTrend: Bearish cross in overbought zone (WT2 >= " +
+     str.tostring(obLevel) + "). Potential short entry.")
+
+// Extreme signals — highest conviction
+alertcondition(crossUpExtOS,
+     title="Strong Bullish Cross (Extreme OS)",
+     message="WaveTrend: Bullish cross in EXTREME oversold zone (WT2 <= " +
+     str.tostring(osExtreme) + "). High conviction long signal.")
+
+alertcondition(crossDownExtOB,
+     title="Strong Bearish Cross (Extreme OB)",
+     message="WaveTrend: Bearish cross in EXTREME overbought zone (WT2 >= " +
+     str.tostring(obExtreme) + "). High conviction short signal.")
+
+// Divergence alerts
+alertcondition(bullDiv,
+     title="Bullish Divergence",
+     message="WaveTrend: Regular bullish divergence detected. " +
+     "Price made lower low while WT1 made higher low.")
+
+alertcondition(bearDiv,
+     title="Bearish Divergence",
+     message="WaveTrend: Regular bearish divergence detected. " +
+     "Price made higher high while WT1 made lower high.")
+
+// Zero-line crosses
+alertcondition(crossAboveZero,
+     title="WT1 Cross Above Zero",
+     message="WaveTrend: WT1 crossed above zero line. Momentum turning bullish.")
+
+alertcondition(crossBelowZero,
+     title="WT1 Cross Below Zero",
+     message="WaveTrend: WT1 crossed below zero line. Momentum turning bearish.")
+
+// Zone entry alerts
+alertcondition(ta.crossover(wt1, obLevel),
+     title="Entered Overbought Zone",
+     message="WaveTrend: WT1 entered overbought zone (above " +
+     str.tostring(obLevel) + ").")
+
+alertcondition(ta.crossunder(wt1, osLevel),
+     title="Entered Oversold Zone",
+     message="WaveTrend: WT1 entered oversold zone (below " +
+     str.tostring(osLevel) + ").")
+
+// Extreme zone entry
+alertcondition(ta.crossover(wt1, obExtreme),
+     title="Entered Extreme OB",
+     message="WaveTrend: WT1 entered EXTREME overbought zone (above " +
+     str.tostring(obExtreme) + "). Watch for reversal.")
+
+alertcondition(ta.crossunder(wt1, osExtreme),
+     title="Entered Extreme OS",
+     message="WaveTrend: WT1 entered EXTREME oversold zone (below " +
+     str.tostring(osExtreme) + "). Watch for reversal.")
+
+// Any cross (useful for general monitoring)
+alertcondition(crossUp,
+     title="WT1/WT2 Bullish Cross (Any Zone)",
+     message="WaveTrend: WT1 crossed above WT2.")
+
+alertcondition(crossDown,
+     title="WT1/WT2 Bearish Cross (Any Zone)",
+     message="WaveTrend: WT1 crossed below WT2.")

@@ -1,0 +1,218 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Multi-Market Indicator Dashboard
+// Shows which indicators are firing for the current asset
+// Combines all system signals: Squeeze, Wick, Trend, RSI, Thrust, TD9
+
+//@version=5
+indicator("Multi-Market Dashboard", shorttitle="MMD", overlay=false)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Core Settings
+bbLen   = input.int(20, "BB Length", group="Squeeze")
+bbMult  = input.float(2.0, "BB Multiplier", group="Squeeze")
+kcLen   = input.int(20, "KC Length", group="Squeeze")
+kcMult  = input.float(1.5, "KC Multiplier", group="Squeeze")
+rsiLen  = input.int(14, "RSI Length", group="Momentum")
+atrLen  = input.int(14, "ATR Length", group="Volatility")
+maFast  = input.int(21, "Fast MA", group="Trend")
+maMid   = input.int(55, "Mid MA", group="Trend")
+maSlow  = input.int(200, "Slow MA", group="Trend")
+
+// ═══════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════
+
+// --- Squeeze ---
+bbBasis  = ta.sma(close, bbLen)
+bbDev    = bbMult * ta.stdev(close, bbLen)
+kcBasis  = ta.sma(close, kcLen)
+kcRange  = ta.atr(kcLen) * kcMult
+sqzOn    = (bbBasis - bbDev) > (kcBasis - kcRange) and (bbBasis + bbDev) < (kcBasis + kcRange)
+sqzFired = not sqzOn and sqzOn[1]
+
+// Squeeze momentum
+hh = ta.highest(high, bbLen)
+ll = ta.lowest(low, bbLen)
+dm = (hh + ll) / 2
+sm = ta.sma(close, bbLen)
+sqzMom = ta.linreg(close - (dm + sm) / 2, bbLen, 0)
+
+// --- RSI ---
+rsiVal    = ta.rsi(close, rsiLen)
+rsiOB     = rsiVal > 70
+rsiOS     = rsiVal < 30
+rsiBull   = rsiVal > 50
+rsiBear   = rsiVal < 50
+
+// --- Trend (MA alignment) ---
+emaFast   = ta.ema(close, maFast)
+emaMid    = ta.ema(close, maMid)
+emaSlow   = ta.ema(close, maSlow)
+bullTrend = close > emaFast and emaFast > emaMid and emaMid > emaSlow
+bearTrend = close < emaFast and emaFast < emaMid and emaMid < emaSlow
+
+// --- MACD ---
+macdLine  = ta.ema(close, 12) - ta.ema(close, 26)
+macdSig   = ta.ema(macdLine, 9)
+macdHist  = macdLine - macdSig
+macdBull  = macdHist > 0
+macdBear  = macdHist < 0
+
+// --- ADX ---
+dmiLen    = 14
+adxSmth   = 14
+hiDiff    = high - high[1]
+loDiff    = low[1] - low
+plusDM    = hiDiff > loDiff and hiDiff > 0 ? hiDiff : 0
+minusDM  = loDiff > hiDiff and loDiff > 0 ? loDiff : 0
+atrADX    = ta.atr(dmiLen)
+plusDI    = 100 * ta.ema(plusDM, dmiLen) / atrADX
+minusDI  = 100 * ta.ema(minusDM, dmiLen) / atrADX
+dx       = math.abs(plusDI - minusDI) / (plusDI + minusDI) * 100
+adxVal   = ta.ema(dx, adxSmth)
+trending  = adxVal > 25
+
+// --- Wick Analysis ---
+bodySize   = math.abs(close - open)
+safeBody   = math.max(bodySize, syminfo.mintick)
+upperWick  = high - math.max(close, open)
+lowerWick  = math.min(close, open) - low
+totalRange = high - low
+bullWick   = totalRange > 0 and lowerWick / safeBody > 2 and lowerWick / totalRange > 0.6
+bearWick   = totalRange > 0 and upperWick / safeBody > 2 and upperWick / totalRange > 0.6
+
+// --- Volume ---
+volAbove   = volume > ta.sma(volume, 20) * 1.5
+obv        = ta.obv
+obvRising  = obv > obv[5]
+
+// --- TD9 Quick Check ---
+td9Buy     = true
+td9Sell    = true
+for i = 0 to 8
+    if not (close[i] < close[i + 4])
+        td9Buy := false
+    if not (close[i] > close[i + 4])
+        td9Sell := false
+
+// ═══════════════════════════════════════════════════
+// SCORING
+// ═══════════════════════════════════════════════════
+
+// Bullish score (0-10)
+bullScore = (bullTrend ? 2 : 0) +
+            (rsiBull ? 1 : 0) +
+            (macdBull ? 1 : 0) +
+            (sqzFired and sqzMom > 0 ? 2 : 0) +
+            (sqzOn ? 1 : 0) +
+            (trending and plusDI > minusDI ? 1 : 0) +
+            (bullWick ? 1 : 0) +
+            (obvRising ? 1 : 0)
+
+// Bearish score (0-10)
+bearScore = (bearTrend ? 2 : 0) +
+            (rsiBear ? 1 : 0) +
+            (macdBear ? 1 : 0) +
+            (sqzFired and sqzMom < 0 ? 2 : 0) +
+            (sqzOn ? 1 : 0) +
+            (trending and minusDI > plusDI ? 1 : 0) +
+            (bearWick ? 1 : 0) +
+            (not obvRising ? 1 : 0)
+
+// Net score
+netScore = bullScore - bearScore
+
+// ═══════════════════════════════════════════════════
+// DASHBOARD PLOTS
+// ═══════════════════════════════════════════════════
+
+// Net score as histogram
+scoreColor = netScore > 4  ? color.new(#00C853, 0) :
+             netScore > 2  ? color.new(#69F0AE, 0) :
+             netScore > 0  ? color.new(#B9F6CA, 0) :
+             netScore == 0 ? color.new(#BDBDBD, 0) :
+             netScore > -2 ? color.new(#FFCDD2, 0) :
+             netScore > -4 ? color.new(#EF9A9A, 0) :
+             color.new(#FF1744, 0)
+
+plot(netScore, "Net Score", scoreColor, style=plot.style_histogram, linewidth=4)
+hline(0, "Zero", color.new(#FFFFFF, 70))
+hline(4, "Strong Bull", color.new(#00E676, 80), hline.style_dotted)
+hline(-4, "Strong Bear", color.new(#FF1744, 80), hline.style_dotted)
+
+// Squeeze state as background
+bgcolor(sqzOn ? color.new(#FFD600, 92) : na, title="Squeeze Active")
+
+// TD9 markers
+plotshape(td9Buy, "TD9 Buy", shape.diamond, location.bottom, color.new(#00BCD4, 0), size=size.tiny)
+plotshape(td9Sell, "TD9 Sell", shape.diamond, location.top, color.new(#E040FB, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// STATUS TABLE
+// ═══════════════════════════════════════════════════
+
+var table dash = table.new(position.top_right, 2, 12, bgcolor=color.new(#1E1E1E, 10),
+                           border_width=1, border_color=color.new(#333333, 0))
+
+if barstate.islast
+    table.cell(dash, 0, 0, "INDICATOR", text_color=color.white, text_size=size.small, bgcolor=color.new(#333333, 0))
+    table.cell(dash, 1, 0, "STATUS", text_color=color.white, text_size=size.small, bgcolor=color.new(#333333, 0))
+
+    table.cell(dash, 0, 1, "Trend", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 1, bullTrend ? "BULL ▲" : bearTrend ? "BEAR ▼" : "NEUTRAL",
+               text_color=bullTrend ? #00E676 : bearTrend ? #FF1744 : #BDBDBD, text_size=size.tiny)
+
+    table.cell(dash, 0, 2, "RSI(" + str.tostring(rsiLen) + ")", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 2, str.tostring(math.round(rsiVal, 1)) + (rsiOB ? " OB" : rsiOS ? " OS" : ""),
+               text_color=rsiOB ? #FF1744 : rsiOS ? #00E676 : #BDBDBD, text_size=size.tiny)
+
+    table.cell(dash, 0, 3, "MACD", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 3, macdBull ? "BULLISH" : "BEARISH",
+               text_color=macdBull ? #00E676 : #FF1744, text_size=size.tiny)
+
+    table.cell(dash, 0, 4, "Squeeze", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 4, sqzOn ? "ACTIVE ●" : sqzFired ? "FIRED!" : "OFF",
+               text_color=sqzOn ? #FFD600 : sqzFired ? #00E676 : #BDBDBD, text_size=size.tiny)
+
+    table.cell(dash, 0, 5, "ADX", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 5, str.tostring(math.round(adxVal, 1)) + (trending ? " TREND" : " RANGE"),
+               text_color=trending ? #00E676 : #FFD600, text_size=size.tiny)
+
+    table.cell(dash, 0, 6, "Momentum", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 6, str.tostring(math.round(sqzMom, 2)),
+               text_color=sqzMom > 0 ? #00E676 : #FF1744, text_size=size.tiny)
+
+    table.cell(dash, 0, 7, "Wick Signal", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 7, bullWick ? "BULL REJECT" : bearWick ? "BEAR REJECT" : "NONE",
+               text_color=bullWick ? #00E676 : bearWick ? #FF1744 : #BDBDBD, text_size=size.tiny)
+
+    table.cell(dash, 0, 8, "Volume", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 8, volAbove ? "HIGH ▲" : "NORMAL",
+               text_color=volAbove ? #FFD600 : #BDBDBD, text_size=size.tiny)
+
+    table.cell(dash, 0, 9, "TD9", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 9, td9Buy ? "BUY 9" : td9Sell ? "SELL 9" : "—",
+               text_color=td9Buy ? #00BCD4 : td9Sell ? #E040FB : #BDBDBD, text_size=size.tiny)
+
+    table.cell(dash, 0, 10, "OBV", text_color=color.white, text_size=size.tiny)
+    table.cell(dash, 1, 10, obvRising ? "RISING" : "FALLING",
+               text_color=obvRising ? #00E676 : #FF1744, text_size=size.tiny)
+
+    table.cell(dash, 0, 11, "NET SCORE", text_color=color.white, text_size=size.small, bgcolor=color.new(#333333, 0))
+    table.cell(dash, 1, 11, str.tostring(netScore) + "/10",
+               text_color=netScore > 0 ? #00E676 : netScore < 0 ? #FF1744 : #BDBDBD,
+               text_size=size.small, bgcolor=color.new(#333333, 0))
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(bullScore >= 6, "Strong Bullish Confluence", "6+ bullish indicators confirming — high probability long")
+alertcondition(bearScore >= 6, "Strong Bearish Confluence", "6+ bearish indicators confirming — high probability short")
+alertcondition(sqzFired, "Squeeze Fired", "Volatility squeeze released — breakout in progress")
+alertcondition(td9Buy, "TD9 Buy Exhaustion", "TD Sequential 9 buy count — potential bottom")
+alertcondition(td9Sell, "TD9 Sell Exhaustion", "TD Sequential 9 sell count — potential top")
