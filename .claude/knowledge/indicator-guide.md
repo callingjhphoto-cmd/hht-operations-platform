@@ -101,31 +101,114 @@
 - Yellow background = active squeeze
 **Best for**: Quick overview of any asset's technical picture
 
+### 8. IA Mean Reversion (`ia_mean_reversion.pine`)
+**Inspired by**: IADSS Mean Reversion component
+**What it does**: Standard deviation bands with directional reversal dots
+**Key signals**: Band touches, 30% double-tap entry, noise suppression (~30 default)
+**Best for**: Range-bound conditions, crypto and equities
+
+### 9. IA Confluence Model (`ia_confluence_model.pine`)
+**Inspired by**: IADSS Confluence Model component
+**What it does**: Multi-banded Bollinger (1σ, 2σ, 3σ) with break/reintegration signals
+**Best for**: Identifying confluence zones across deviation levels
+
+### 10. Sentiment Bias Overlay (`sentiment_bias_overlay.pine`)
+**What it does**: Manual sentiment input layer for directional bias
+**Best for**: Overlaying macro sentiment context on technical charts
+
+### 11. WaveTrend Oscillator (`wavetrend_oscillator.pine`) — NEW
+**Based on**: LazyBear's WaveTrend (allegedly used in Trading Alpha)
+**What it does**: Versatile reversal detection oscillator with divergence detection
+**Key signals**:
+- WT1 (cyan) and WT2 (orange) lines with cross signals
+- Green/red dots at crosses in OB/OS zones (60/-60)
+- Diamond shapes for extreme zone crosses (80/-80)
+- Histogram showing momentum spread
+- Regular bullish/bearish divergence with line drawing
+**Calculation**: AP=hlc3, ESA=EMA(AP,10), D=EMA(|AP-ESA|,10), CI=(AP-ESA)/(0.015*D), WT1=EMA(CI,21), WT2=SMA(WT1,4)
+**Best for**: All markets. Crypto and forex 1H-Daily. Strong in overbought/oversold reversal detection
+**Parameters**: Channel(10), Average(21), Signal(4), OB(60), OS(-60)
+
+### 12. ML Lorentzian Classification (`ml_lorentzian_classification.pine`) — NEW
+**Based on**: jdehorty's open-source KNN classifier (Mozilla Public License 2.0)
+**What it does**: Machine learning pattern classification using Lorentzian distance metric
+**Key signals**:
+- Green/red arrows for buy/sell classifications
+- Background shading showing classification confidence
+- Feature info table with neighbor vote counts
+**Features used**: RSI(14), WaveTrend, CCI(20), ADX(14), RSI(9) — all z-score normalized
+**Filters**: SMA(200) regime filter, ATR volatility filter, ADX trend filter, minimum bar spacing
+**Best for**: All markets. 1H, 4H, Daily. Adds ML dimension missing from rest of collection
+**Parameters**: K=8 neighbors, 50-bar normalization window, EMA(3) output smoothing
+
+### 13. Ehlers DSP Suite (`ehlers_dsp_suite.pine`) — NEW
+**Based on**: John Ehlers' digital signal processing (Rocket Science for Traders)
+**What it does**: Three modes — Fisher Transform, Super Smoother Momentum, Cycle Period
+**Key components**:
+- Super Smoother: 2-pole filter with minimal lag, superior to any moving average
+- Fisher Transform: Converts price to Gaussian distribution, amplifies turning points
+- Dominant Cycle: Estimates current market cycle period
+- Instantaneous Trendline: Zero-lag trendline using Hilbert Transform
+**Best for**: Cycle-adaptive analysis. Forex and commodities. Fisher Transform excellent for reversals
+**Parameters**: SS Length(10), Fisher Lookback(10), Cycle Min(6)/Max(50)
+
+### 14. Smart Money Concepts (`smart_money_concepts.pine`) — NEW
+**Based on**: ICT methodology + LuxAlgo open-source detection logic
+**What it does**: Complete SMC indicator — Order Blocks, FVGs, BOS/CHoCH, Liquidity Sweeps
+**Key signals**:
+- BOS (Break of Structure) labels with trend lines
+- CHoCH (Change of Character) labels with dashed lines
+- Fair Value Gap boxes (cyan=bullish, orange=bearish) with mitigation tracking
+- Order Block boxes with age-based expiry
+- Liquidity sweep labels (yellow diamonds)
+- Premium/Discount zone background shading
+- Equilibrium line
+**Best for**: Forex, crypto, indices. Institutional order flow analysis. 15min-Daily
+**Parameters**: Swing(5), FVG Filter(Aggressive/Moderate/Conservative), FVG/OB Max Age(50)
+
+### 15. Volatility Regime Detector (`volatility_regime_detector.pine`) — NEW
+**What it does**: Classifies market into 5 regimes using composite of 4 methods
+**Components**:
+- ADX for trend strength
+- Choppiness Index for range detection
+- Random Walk Index for trend validity
+- Hurst Exponent proxy for persistence/mean-reversion
+**Regimes**: Strong Trend → Trending → Transitioning → Ranging → Choppy
+**Composite score**: -100 to +100 (positive=trending, negative=ranging)
+**Best for**: Meta-indicator — tells you WHICH other indicators to use
+- Trending regime: Use Alpha Trend, Squeeze Momentum, WaveTrend
+- Ranging regime: Use IA Mean Reversion, Wick Analysis, Ehlers Fisher Transform
+**Parameters**: ADX(14), Choppiness(14), RWI(14), Vol Regime Lookback(50)
+
 ## Indicator Effectiveness by Market
 
 ### WTI Crude Oil — Best Indicator Stack
 1. Alpha Trend System (EMA 20/50/200 for persistent trends)
 2. Alpha Squeeze Momentum (catches breakouts after OPEC/inventory compression)
-3. Alpha Confirmation Suite (ADX confirms trend strength)
-4. RSI(14) at 40/60 levels (trend-following mode, NOT 30/70)
+3. Volatility Regime Detector (know when to trend-follow vs mean-revert)
+4. ACS v2 — 3-line RSI alignment + thrust clusters for institutional confirmation
+5. Ehlers Fisher Transform (cycle-adaptive reversal detection for commodities)
 
 ### Bitcoin — Best Indicator Stack
 1. Alpha Squeeze Momentum (volatility compression is incredibly powerful here)
-2. InvestAnswers ATR-DCA (DCA zones + range analysis)
-3. Wick Analysis Pro (liquidity sweeps very common in crypto)
-4. TD Sequential 9 (exhaustion signals work well on BTC)
+2. InvestAnswers ATR-DCA (DCA zones + DCAS multiplier system)
+3. Smart Money Concepts (FVGs + liquidity sweeps dominate crypto)
+4. WaveTrend Oscillator (reversal detection at extreme zones)
+5. ML Lorentzian Classification (pattern recognition adapts to BTC's regime shifts)
 
 ### Forex — Best Indicator Stack
-1. Wick Analysis Pro (wick rejections at key levels)
-2. Alpha Confirmation Suite (RSI divergences + institutional thrust)
-3. Alpha Trend System (MA alignment for trend context)
-4. Alpha Squeeze Momentum (for breakout timing)
+1. Smart Money Concepts (ICT methodology dominant in forex — BOS/CHoCH/FVGs)
+2. Wick Analysis Pro (wick rejections + liquidity sweeps at key levels)
+3. WaveTrend Oscillator (oversold/overbought reversals)
+4. Alpha Confirmation Suite v2 (3-line RSI divergences + institutional thrust)
+5. Volatility Regime Detector (avoid choppy sessions, trade trending Kill Zones)
 
 ### Equities — Best Indicator Stack
 1. Alpha Trend System (SMA 50/200 golden/death cross)
-2. Alpha Confirmation Suite (volume thrust for institutional detection)
-3. Multi-Market Dashboard (quick earnings/event assessment)
-4. TD Sequential 9 (timing entries at exhaustion)
+2. ML Lorentzian Classification (KNN adapts well to equity patterns)
+3. ACS v2 — thrust clusters detect institutional accumulation/distribution
+4. Ehlers DSP Suite (Super Smoother momentum + Fisher Transform)
+5. TD Sequential 9 (timing entries at exhaustion)
 
 ## Indicator Expansion Pipeline (Iterations 7-8 Discovery)
 
