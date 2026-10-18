@@ -203,65 +203,60 @@
 
 ---
 
-# PART 7: INSTITUTIONAL ALGO RESEARCH — WHAT WE NEED GEMINI TO INVESTIGATE
+# PART 7: INSTITUTIONAL ALGO RESEARCH — COMPLETED FINDINGS
 
-## 7.1 Renaissance Technologies / Medallion Fund
-**What to research**:
-- Hidden Markov Models for regime detection
-- Statistical arbitrage approaches they pioneered
-- Mean reversion vs momentum — which do they favor?
-- Overfitting prevention techniques
-- Signal-to-noise ratio optimization
-- Any public information from Jim Simons, Robert Mercer, Peter Brown
+## 7.1 Renaissance Technologies / Medallion Fund — KEY FINDINGS
+- **Hidden Markov Models**: Core methodology, traced through personnel (Leonard Baum co-created Baum-Welch algorithm; Peter Brown & Robert Mercer from IBM speech recognition)
+- **Kernel regression**: Higher-dimensional kernel methods for trend-persistence models
+- **Signal accuracy**: Individually marginal (~50.75%) but combined across thousands of securities
+- **Position sizing**: Kelly criterion governs allocation
+- **Time horizon**: Exclusively short-term (sub-second to ~2 weeks)
+- **Mean reversion vs momentum**: BOTH — very short-term favors mean reversion, medium-term favors momentum
+- **Overfitting prevention**: Short training windows, walk-forward OOS testing, 99%+ signal rejection rate
 
-## 7.2 Two Sigma / DE Shaw / Citadel
-**What to research**:
-- Factor models and alternative data usage
-- Statistical arbitrage methodology
-- Common factors exploited: momentum, value, carry, volatility
-- Machine learning approaches: random forests, gradient boosting, neural nets
-- Alternative data: satellite imagery, NLP sentiment, web scraping
+## 7.2 Two Sigma / DE Shaw / Citadel — KEY FINDINGS
+- **Two Sigma 18-factor framework**: Core Macro, Secondary Macro, Macro Style, Equity Style factors (originally 8, expanded)
+- **DE Shaw**: Pattern recognition + risk management + market-neutral portfolio construction (learned from 1998 $372M loss)
+- **Citadel**: Global Quantitative Strategies (systematic) separate from Citadel Securities (market making)
+- **Critical ML finding**: 2023 study showing strong ML alpha was compromised by coding error — after correction, simple elastic net MATCHED complex ML. Well-designed linear combinations may be as effective
+- **Alternative data**: 90% adoption rate (2026 survey) — satellite, NLP, web scraping, transactions, geolocation
+- **Factor interactions**: Value and momentum are negatively correlated (natural diversification)
 
-## 7.3 John Ehlers DSP Indicators
-**What to research**:
-- Complete catalog of Ehlers indicators with PineScript implementations
-- MESA Adaptive Moving Average (MAMA/FAMA)
-- Hilbert Transform, Cyber Cycle, Fisher Transform
-- Super Smoother Filter, Roofing Filter
-- Autocorrelation Periodogram for dominant cycle detection
-- Even Better Sinewave indicator
-- Which Ehlers indicators work best for crypto vs forex vs commodities
+## 7.3 John Ehlers DSP Indicators — COMPLETE CATALOG COMPILED
+- 16 indicators with full PineScript v5 code (MAMA/FAMA, Super Smoother, Fisher, Hilbert, Cyber Cycle, Bandpass, etc.)
+- Recent 2024-2026 additions: Ultimate Channels, Precision Trend, USI, Griffiths Predictor, AutoTune Filter
+- **Market suitability**: Default parameters "incredibly poor" on BTC; gold tests well; forex has cleanest cycles
+- Reusable PineScript filter library created in dsp-ml-research.md
 
-## 7.4 Kalman Filters
-**What to research**:
-- Standard Kalman Filter for price smoothing vs moving averages
-- Extended Kalman Filter for non-linear price dynamics
-- Optimal noise parameters by market
-- PineScript implementation feasibility and code examples
+## 7.4 Kalman Filters — IMPLEMENTED
+- Standard scalar Kalman filter with PineScript v5 code
+- With constant parameters, converges to EMA — edge depends on adaptive noise tuning
+- **Optimal Q/R by market**: Crypto Q=0.05-0.10, Forex Q=0.001-0.01, Commodities Q=0.01-0.05
+- UKF significantly outperforms EKF for non-linear systems (academic evidence)
 
-## 7.5 GARCH Volatility Models
-**What to research**:
-- GARCH(1,1) for volatility forecasting
-- EGARCH for asymmetric volatility
-- How to approximate in PineScript (limited language)
-- Volatility regime detection approaches
-- Realized vs implied volatility comparison
+## 7.5 GARCH — PINE APPROXIMATION AVAILABLE
+- GARCH(1,1) recursion coded in PineScript v5 (hard part: parameter estimation needs offline Python)
+- Four approximation approaches: fixed params, EWMA/RiskMetrics, ATR proxy, Python-fit-Pine-deploy
+- Volatility regime detection via percentile ranking, short vs long vol comparison
 
-## 7.6 Machine Learning in Trading
-**What to research**:
-- Nadaraya-Watson kernel regression — exact implementation details
-- Lorentzian Classification (jdehorty) — features, parameters, limitations
-- K-nearest neighbors for pattern matching
-- What ML approaches can actually run in PineScript v5 vs need Python
-- Feature engineering for price data
+## 7.6 Machine Learning — WHAT WORKS IN PINE
+| Method | PineScript Feasible? | Notes |
+|--------|---------------------|-------|
+| KNN / Lorentzian | YES | Implemented (455 lines) |
+| Nadaraya-Watson | YES (repaints) | Kernel regression with lookback window |
+| Random Forest | PARTIAL | GainzAlgo's Arbor library, depth-1 stumps |
+| Neural Networks | NO | Need Python |
+| LSTM / RNN | NO | Need Python |
+| SVM | NO | Need Python |
 
-## 7.7 Quantitative Factor Models
-**What to research**:
-- Fama-French 3-factor and 5-factor models
-- Carhart 4-factor (momentum)
-- How to implement factor scoring for individual instruments
-- Cross-sectional vs time-series momentum
-- Risk parity and volatility targeting
+## 7.7 Factor Models — IMPLEMENTABLE IN PINE
+- Fama-French 5-factor: Market, Size, Value, Profitability, Investment
+- Carhart adds UMD momentum (12-month lookback, 1-month skip)
+- BAB (Betting Against Beta): Reported Sharpe 0.78 for US stocks 1926-2012
+- Risk parity = inverse volatility weighting → directly translates to PineScript position sizing
+- Cross-sectional + time-series momentum combination via neural net showed best results
+
+## 7.8 REMAINING QUESTIONS FOR GEMINI TO INVESTIGATE DEEPER
 
 ---
 
