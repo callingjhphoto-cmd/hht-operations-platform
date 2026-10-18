@@ -1,0 +1,203 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Ehlers DSP Suite — Super Smoother, Fisher Transform, Instantaneous Trendline
+// Based on John Ehlers' digital signal processing techniques from
+// "Rocket Science for Traders" and "Cybernetic Analysis for Stocks and Futures"
+
+//@version=5
+indicator("Ehlers DSP Suite", shorttitle="Ehlers DSP", overlay=false, max_lines_count=20)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// Mode Selection
+mode = input.string("Fisher Transform", "Display Mode", options=["Fisher Transform", "Super Smoother Momentum", "Cycle Period"], group="Mode")
+
+// Super Smoother
+ssLen     = input.int(10, "Super Smoother Length", minval=2, maxval=100, group="Super Smoother", tooltip="Ehlers 2-pole Super Smoother — minimal lag, no ripple")
+
+// Fisher Transform
+fishLen   = input.int(10, "Fisher Lookback", minval=2, maxval=100, group="Fisher Transform", tooltip="Lookback for normalization before Fisher Transform")
+fishSmooth = input.int(1, "Fisher Smoothing", minval=1, maxval=5, group="Fisher Transform")
+
+// Instantaneous Trendline (for momentum calculation)
+itLen     = input.int(20, "Trendline Length", minval=5, maxval=100, group="Instantaneous Trendline")
+
+// Cycle Detection
+cycleMinLen = input.int(6, "Min Cycle Length", minval=4, maxval=20, group="Cycle Detection")
+cycleMaxLen = input.int(50, "Max Cycle Length", minval=20, maxval=100, group="Cycle Detection")
+
+// Signal Thresholds
+fishOB    = input.float(2.0, "Fisher Overbought", minval=0.5, maxval=5.0, step=0.1, group="Thresholds")
+fishOS    = input.float(-2.0, "Fisher Oversold", maxval=-0.5, minval=-5.0, step=0.1, group="Thresholds")
+momThresh = input.float(0.0, "Momentum Zero Line", group="Thresholds")
+
+// ═══════════════════════════════════════════════════
+// EHLERS SUPER SMOOTHER FILTER (2-pole)
+// ═══════════════════════════════════════════════════
+// Removes high-frequency noise with minimal lag — better than any MA
+
+f_superSmoother(src, length) =>
+    a1 = math.exp(-math.sqrt(2) * math.pi / length)
+    b1 = 2.0 * a1 * math.cos(math.sqrt(2) * math.pi / length)
+    c2 = b1
+    c3 = -a1 * a1
+    c1 = 1.0 - c2 - c3
+    var float ss = na
+    ss := c1 * (src + nz(src[1])) / 2.0 + c2 * nz(ss[1]) + c3 * nz(ss[2])
+    ss
+
+ssPrice = f_superSmoother(close, ssLen)
+ssPrev  = f_superSmoother(close, ssLen * 2)
+ssMomentum = ssPrice - ssPrev
+
+// ═══════════════════════════════════════════════════
+// EHLERS FISHER TRANSFORM
+// ═══════════════════════════════════════════════════
+// Converts price distribution to approximately Gaussian — extreme values
+// are amplified, making turning points sharp and easy to identify
+
+hiPrice  = ta.highest(hl2, fishLen)
+loPrice  = ta.lowest(hl2, fishLen)
+rawRange = hiPrice - loPrice
+
+var float normVal = 0.0
+normVal := rawRange > 0 ? 0.33 * 2.0 * ((hl2 - loPrice) / rawRange - 0.5) + 0.67 * nz(normVal[1]) : nz(normVal[1])
+clampVal = math.max(-0.999, math.min(0.999, normVal))
+
+var float fisher = 0.0
+fisher := 0.5 * math.log((1.0 + clampVal) / (1.0 - clampVal)) + 0.5 * nz(fisher[1])
+fisherSignal = nz(fisher[1])
+
+// Optional extra smoothing
+fisherSmoothed = fishSmooth > 1 ? ta.ema(fisher, fishSmooth) : fisher
+fisherSigSmoothed = fishSmooth > 1 ? ta.ema(fisherSignal, fishSmooth) : fisherSignal
+
+// Fisher cross signals
+fishBullCross = ta.crossover(fisherSmoothed, fisherSigSmoothed) and fisherSmoothed < fishOS
+fishBearCross = ta.crossunder(fisherSmoothed, fisherSigSmoothed) and fisherSmoothed > fishOB
+
+// ═══════════════════════════════════════════════════
+// EHLERS INSTANTANEOUS TRENDLINE
+// ═══════════════════════════════════════════════════
+// Zero-lag trendline using Hilbert Transform principles
+
+f_instantTrend(src, length) =>
+    a = 2.0 / (length + 1.0)
+    var float it = na
+    it := bar_index < length ? src : (a - a * a / 4.0) * src + 0.5 * a * a * nz(src[1]) - (a - 0.75 * a * a) * nz(src[2]) + 2.0 * (1.0 - a) * nz(it[1]) - (1.0 - a) * (1.0 - a) * nz(it[2])
+    it
+
+instTrend = f_instantTrend(close, itLen)
+instTrendLag = instTrend[2]
+
+// ═══════════════════════════════════════════════════
+// DOMINANT CYCLE PERIOD ESTIMATION (simplified)
+// ═══════════════════════════════════════════════════
+
+f_dominantCycle(src, minLen, maxLen) =>
+    var float maxPower = 0.0
+    var int domCycle = math.round(math.avg(minLen, maxLen))
+    bestPower = 0.0
+    bestPeriod = domCycle
+    for period = minLen to maxLen
+        cosPart = 0.0
+        sinPart = 0.0
+        for i = 0 to period - 1
+            angle = 2.0 * math.pi * i / period
+            cosPart += nz(src[i]) * math.cos(angle)
+            sinPart += nz(src[i]) * math.sin(angle)
+        power = cosPart * cosPart + sinPart * sinPart
+        if power > bestPower
+            bestPower := power
+            bestPeriod := period
+    domCycle := bestPeriod
+    domCycle
+
+dcSrc = close - f_superSmoother(close, cycleMaxLen)
+domCycle = f_dominantCycle(dcSrc, cycleMinLen, cycleMaxLen)
+
+// ═══════════════════════════════════════════════════
+// PLOTS — MODE-DEPENDENT
+// ═══════════════════════════════════════════════════
+
+isFisher = mode == "Fisher Transform"
+isMom    = mode == "Super Smoother Momentum"
+isCycle  = mode == "Cycle Period"
+
+// Fisher Transform plots
+fishColor = fisherSmoothed > fisherSigSmoothed ? color.new(#00E676, 0) : color.new(#FF1744, 0)
+plot(isFisher ? fisherSmoothed : na, "Fisher", fishColor, linewidth=2)
+plot(isFisher ? fisherSigSmoothed : na, "Fisher Signal", color.new(#FFD600, 50), linewidth=1)
+
+hline(isFisher ? fishOB : na, "Fish OB", color.new(#FF1744, 60), hline.style_dashed)
+hline(isFisher ? fishOS : na, "Fish OS", color.new(#00E676, 60), hline.style_dashed)
+hline(isFisher ? 0.0 : na, "Fish Zero", color.new(#FFFFFF, 80), hline.style_dotted)
+
+// Fisher OB/OS background
+bgcolor(isFisher and fisherSmoothed > fishOB ? color.new(#FF1744, 90) :
+        isFisher and fisherSmoothed < fishOS ? color.new(#00E676, 90) : na)
+
+// Super Smoother Momentum plots
+momColor = ssMomentum > 0 ? (ssMomentum > ssMomentum[1] ? color.new(#00E676, 0) : color.new(#69F0AE, 30)) :
+           (ssMomentum < ssMomentum[1] ? color.new(#FF1744, 0) : color.new(#EF9A9A, 30))
+plot(isMom ? ssMomentum : na, "SS Momentum", momColor, style=plot.style_columns, linewidth=2)
+plot(isMom ? f_superSmoother(ssMomentum, 5) : na, "SS Mom Signal", color.new(#FFD600, 30), linewidth=1)
+hline(isMom ? 0.0 : na, "Mom Zero", color.new(#FFFFFF, 80), hline.style_dotted)
+
+// Cycle Period plots
+plot(isCycle ? domCycle : na, "Dominant Cycle", color.new(#00BCD4, 0), linewidth=2)
+hline(isCycle ? 20.0 : na, "Short Cycle", color.new(#FFD600, 60), hline.style_dotted)
+hline(isCycle ? 40.0 : na, "Long Cycle", color.new(#FF6D00, 60), hline.style_dotted)
+
+// ═══════════════════════════════════════════════════
+// SIGNAL MARKERS
+// ═══════════════════════════════════════════════════
+
+plotshape(isFisher and fishBullCross, "Fisher Bull", shape.triangleup,
+          location.bottom, color.new(#00E676, 0), size=size.small)
+plotshape(isFisher and fishBearCross, "Fisher Bear", shape.triangledown,
+          location.top, color.new(#FF1744, 0), size=size.small)
+
+// Momentum zero-cross signals
+momBullCross = ta.crossover(ssMomentum, momThresh)
+momBearCross = ta.crossunder(ssMomentum, momThresh)
+
+plotshape(isMom and momBullCross, "Mom Bull Cross", shape.circle,
+          location.bottom, color.new(#00E676, 0), size=size.tiny)
+plotshape(isMom and momBearCross, "Mom Bear Cross", shape.circle,
+          location.top, color.new(#FF1744, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// INFO TABLE
+// ═══════════════════════════════════════════════════
+
+if barstate.islast
+    var table infoTbl = table.new(position.top_right, 2, 5, border_width=1)
+
+    table.cell(infoTbl, 0, 0, "Ehlers DSP", text_color=color.white, bgcolor=color.new(#263238, 0), text_size=size.small)
+    table.cell(infoTbl, 1, 0, mode, text_color=color.new(#00BCD4, 0), bgcolor=color.new(#263238, 0), text_size=size.small)
+
+    table.cell(infoTbl, 0, 1, "Fisher", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(infoTbl, 1, 1, str.tostring(fisherSmoothed, "#.##"), text_color=fisherSmoothed > fishOB ? color.red : fisherSmoothed < fishOS ? color.lime : color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 2, "SS Mom", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(infoTbl, 1, 2, str.tostring(ssMomentum, "#.####"), text_color=ssMomentum > 0 ? color.lime : color.red, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 3, "Cycle", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(infoTbl, 1, 3, str.tostring(domCycle) + " bars", text_color=color.new(#00BCD4, 0), bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(infoTbl, 0, 4, "SS Price", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(infoTbl, 1, 4, str.tostring(ssPrice, format.mintick), text_color=ssPrice > ssPrev ? color.lime : color.red, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(fishBullCross, "Fisher Bullish Reversal", "Fisher Transform bullish cross in oversold zone")
+alertcondition(fishBearCross, "Fisher Bearish Reversal", "Fisher Transform bearish cross in overbought zone")
+alertcondition(momBullCross, "SS Momentum Bull", "Super Smoother momentum crossed above zero")
+alertcondition(momBearCross, "SS Momentum Bear", "Super Smoother momentum crossed below zero")
+alertcondition(ta.crossover(fisherSmoothed, 0.0), "Fisher Zero Cross Up", "Fisher Transform crossed above zero")
+alertcondition(ta.crossunder(fisherSmoothed, 0.0), "Fisher Zero Cross Down", "Fisher Transform crossed below zero")

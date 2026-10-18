@@ -1,0 +1,455 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// ML Lorentzian Classification — KNN with Lorentzian Distance Metric
+//
+// CONCEPT:
+// Inspired by jdehorty's "Machine Learning: Lorentzian Classification" approach.
+// Uses K-Nearest Neighbors (KNN) classification with a Lorentzian distance metric
+// to classify market regimes as bullish or bearish based on multi-feature analysis.
+//
+// WHY LORENTZIAN DISTANCE?
+// Euclidean: d(x,y) = sqrt(sum((x_i - y_i)^2))
+// Lorentzian: d(x,y) = sum(log(1 + |x_i - y_i|))
+//
+// Lorentzian distance is more robust to outliers than Euclidean because the log
+// function compresses large differences. In financial markets where extreme moves
+// (fat tails) are common, this produces more stable neighbor selection and
+// reduces the influence of anomalous bars on classification.
+//
+// FEATURES (5 normalized indicators):
+// 1. RSI(14)  — Medium-term momentum
+// 2. WaveTrend — Trend-following oscillator on hlc3
+// 3. CCI(20)  — Mean reversion / trend strength
+// 4. ADX(14)  — Trend intensity (directionless)
+// 5. RSI(9)   — Short-term momentum
+//
+// Each feature is z-score normalized over a configurable lookback to ensure
+// equal weighting in the distance calculation.
+//
+// FILTERS:
+// - Regime: SMA(200) trend filter (longs above, shorts below)
+// - Volatility: ATR percentile filter to avoid low-vol chop
+// - ADX: Minimum trend strength to avoid ranging markets
+// - Signal cooldown: Minimum bars between signals to prevent whipsaw
+//
+// RECOMMENDED MARKETS AND TIMEFRAMES:
+// - WTI Crude Oil: 1H, 4H (strong trend-following characteristics)
+// - BTC/ETH Crypto: 4H, 1D (high volatility = clear regime separation)
+// - Forex Majors: 1H, 4H (EUR/USD, GBP/USD work well)
+// - US Equities: 1D (SPY, QQQ, large-cap names)
+// - General: Higher timeframes (4H, 1D) produce fewer but higher-quality signals
+//            Lower timeframes (15m, 1H) need tighter K and shorter lookback
+//
+// KNOWN LIMITATIONS:
+// - PineScript loop limits constrain the training window to ~2000 bars
+// - All KNN methods lag by nature; signals confirm rather than predict
+// - In strong one-directional trends, the classifier can stay on one side
+//   for extended periods — this is a feature, not a bug
+// - Regime filter can cause missed entries right at trend reversals
+// - WaveTrend can produce false signals in extremely low-volatility environments
+
+//@version=5
+indicator("ML: Lorentzian Classification", shorttitle="ML-LC", overlay=true, max_bars_back=2000, max_labels_count=500)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- KNN Settings ---
+i_kNeighbors    = input.int(8, "K Neighbors", minval=1, maxval=50, group="KNN Settings",
+                  tooltip="Number of nearest neighbors for voting. 8 is default. Lower = more reactive but noisier. Higher = smoother but laggier.")
+i_maxBarsBack   = input.int(2000, "Training Window (bars)", minval=100, maxval=2000, group="KNN Settings",
+                  tooltip="How many historical bars to search for neighbors. Larger = more data but slower.")
+i_smoothing     = input.int(3, "Signal Smoothing (EMA)", minval=1, maxval=10, group="KNN Settings",
+                  tooltip="EMA smoothing applied to the raw classification score. 1 = no smoothing.")
+
+// --- Feature 1: RSI(14) ---
+i_f1_on         = input.bool(true, "Feature 1: RSI(14)", group="Features",
+                  tooltip="Medium-term Relative Strength Index")
+i_f1_len        = input.int(14, "  RSI Length", minval=2, group="Features")
+
+// --- Feature 2: WaveTrend ---
+i_f2_on         = input.bool(true, "Feature 2: WaveTrend", group="Features",
+                  tooltip="WaveTrend oscillator (EMA-based trend on HLC3)")
+i_f2_chLen      = input.int(10, "  WT Channel Length", minval=2, group="Features")
+i_f2_avgLen     = input.int(21, "  WT Average Length", minval=2, group="Features")
+
+// --- Feature 3: CCI(20) ---
+i_f3_on         = input.bool(true, "Feature 3: CCI(20)", group="Features",
+                  tooltip="Commodity Channel Index — mean reversion / trend")
+i_f3_len        = input.int(20, "  CCI Length", minval=2, group="Features")
+
+// --- Feature 4: ADX(14) ---
+i_f4_on         = input.bool(true, "Feature 4: ADX(14)", group="Features",
+                  tooltip="Average Directional Index — trend strength")
+i_f4_len        = input.int(14, "  ADX Length", minval=2, group="Features")
+
+// --- Feature 5: RSI(9) ---
+i_f5_on         = input.bool(true, "Feature 5: RSI(9)", group="Features",
+                  tooltip="Short-term RSI for momentum confirmation")
+i_f5_len        = input.int(9, "  RSI(9) Length", minval=2, group="Features")
+
+// --- Normalization ---
+i_normLen       = input.int(50, "Z-Score Lookback", minval=10, maxval=200, group="Normalization",
+                  tooltip="Window for z-score normalization of each feature. 50 bars is standard.")
+
+// --- Filters ---
+i_useRegime     = input.bool(true, "Use Regime Filter (SMA 200)", group="Filters",
+                  tooltip="Only long above SMA(200), only short below")
+i_regimeLen     = input.int(200, "  Regime SMA Length", minval=50, group="Filters")
+
+i_useVolFilter  = input.bool(true, "Use Volatility Filter", group="Filters",
+                  tooltip="Skip signals when ATR is below the 20th percentile (low-vol chop)")
+i_atrLen        = input.int(14, "  ATR Length", minval=1, group="Filters")
+i_atrPctile     = input.int(20, "  ATR Percentile Threshold", minval=5, maxval=50, group="Filters",
+                  tooltip="Minimum ATR percentile rank to allow signals. Below this = too quiet.")
+
+i_useAdxFilter  = input.bool(false, "Use ADX Filter", group="Filters",
+                  tooltip="Require ADX above a threshold for signal generation")
+i_adxThreshold  = input.float(20.0, "  Min ADX for Signals", minval=5.0, maxval=50.0, step=1.0, group="Filters")
+
+i_cooldown      = input.int(5, "Min Bars Between Signals", minval=0, maxval=50, group="Filters",
+                  tooltip="Minimum bars between consecutive signals to prevent whipsaw")
+
+// --- Display ---
+i_showArrows    = input.bool(true, "Show Signal Arrows", group="Display")
+i_showBG        = input.bool(true, "Show Confidence Background", group="Display")
+i_showTable     = input.bool(true, "Show Info Table", group="Display")
+i_tablePos      = input.string("Top Right", "Table Position",
+                  options=["Top Left", "Top Right", "Bottom Left", "Bottom Right"],
+                  group="Display")
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- Feature 1: RSI(14) ---
+f1_raw = ta.rsi(close, i_f1_len)
+
+// --- Feature 2: WaveTrend ---
+// WaveTrend formula: ESA = EMA(hlc3, chLen), D = EMA(|hlc3 - ESA|, chLen)
+// CI = (hlc3 - ESA) / (0.015 * D), WT1 = EMA(CI, avgLen)
+f2_hlc3 = hlc3
+f2_esa  = ta.ema(f2_hlc3, i_f2_chLen)
+f2_d    = ta.ema(math.abs(f2_hlc3 - f2_esa), i_f2_chLen)
+f2_ci   = f2_d != 0 ? (f2_hlc3 - f2_esa) / (0.015 * f2_d) : 0.0
+f2_raw  = ta.ema(f2_ci, i_f2_avgLen)
+
+// --- Feature 3: CCI(20) ---
+f3_raw = ta.cci(close, i_f3_len)
+
+// --- Feature 4: ADX(14) ---
+// ADX calculation using Wilder's smoothing
+f4_trSmooth  = 0.0
+f4_dpSmooth  = 0.0
+f4_dmSmooth  = 0.0
+f4_tr        = ta.tr(true)
+f4_dpRaw     = high - high[1] > low[1] - low ? math.max(high - high[1], 0) : 0.0
+f4_dmRaw     = low[1] - low > high - high[1] ? math.max(low[1] - low, 0) : 0.0
+
+f4_trSmooth := nz(f4_trSmooth[1]) - nz(f4_trSmooth[1]) / i_f4_len + f4_tr
+f4_dpSmooth := nz(f4_dpSmooth[1]) - nz(f4_dpSmooth[1]) / i_f4_len + f4_dpRaw
+f4_dmSmooth := nz(f4_dmSmooth[1]) - nz(f4_dmSmooth[1]) / i_f4_len + f4_dmRaw
+
+f4_diPlus    = f4_trSmooth != 0 ? 100.0 * f4_dpSmooth / f4_trSmooth : 0.0
+f4_diMinus   = f4_trSmooth != 0 ? 100.0 * f4_dmSmooth / f4_trSmooth : 0.0
+f4_dx        = (f4_diPlus + f4_diMinus) != 0 ? 100.0 * math.abs(f4_diPlus - f4_diMinus) / (f4_diPlus + f4_diMinus) : 0.0
+
+var float f4_adxVal = 0.0
+f4_adxVal := nz(f4_adxVal[1]) + (f4_dx - nz(f4_adxVal[1])) / i_f4_len
+f4_raw = f4_adxVal
+
+// --- Feature 5: RSI(9) ---
+f5_raw = ta.rsi(close, i_f5_len)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Z-SCORE NORMALIZATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Normalize feature to zero mean, unit variance over lookback window
+// z = (x - mean) / stdev. If stdev is zero, return 0.
+f_zscore(float src, int len) =>
+    m = ta.sma(src, len)
+    s = ta.stdev(src, len)
+    s > 0 ? (src - m) / s : 0.0
+
+f1_norm = i_f1_on ? f_zscore(f1_raw, i_normLen) : 0.0
+f2_norm = i_f2_on ? f_zscore(f2_raw, i_normLen) : 0.0
+f3_norm = i_f3_on ? f_zscore(f3_raw, i_normLen) : 0.0
+f4_norm = i_f4_on ? f_zscore(f4_raw, i_normLen) : 0.0
+f5_norm = i_f5_on ? f_zscore(f5_raw, i_normLen) : 0.0
+
+// Count active features for distance normalization
+activeFeatures = (i_f1_on ? 1 : 0) + (i_f2_on ? 1 : 0) + (i_f3_on ? 1 : 0) + (i_f4_on ? 1 : 0) + (i_f5_on ? 1 : 0)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TRAINING LABELS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Define forward-looking labels: was the close higher or lower 4 bars later?
+// +1 = price went up (bullish), -1 = price went down (bearish)
+// We use a 4-bar lookahead for label generation.
+// NOTE: Labels use future data only for training — the current bar's prediction
+// does NOT use its own future label; it only looks at past bars' labels.
+labelLookahead = 4
+trainingLabel  = close[labelLookahead] < close ? 1 : -1
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KNN CLASSIFICATION WITH LORENTZIAN DISTANCE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Lorentzian distance between current bar and a historical bar
+// d(x,y) = sum( log(1 + |x_i - y_i|) ) for each feature i
+// This is computed inline in the loop below for performance.
+
+// We store the K nearest neighbors (smallest distances) and their labels.
+// Using arrays to track the top-K.
+
+var float[] kDistances = array.new_float(0)
+var int[]   kLabels    = array.new_int(0)
+
+// Classification score: sum of neighbor labels normalized to [-1, +1]
+float rawScore = 0.0
+
+// Only run classification when we have enough data
+if bar_index > i_maxBarsBack + labelLookahead + i_normLen
+    // Clear arrays each bar
+    array.clear(kDistances)
+    array.clear(kLabels)
+
+    // Current bar feature vector
+    float currF1 = f1_norm
+    float currF2 = f2_norm
+    float currF3 = f3_norm
+    float currF4 = f4_norm
+    float currF5 = f5_norm
+
+    // Search through historical bars (skip the most recent labelLookahead bars
+    // since their labels depend on future data we don't have yet)
+    int startOffset = labelLookahead + 1
+    int endOffset   = i_maxBarsBack
+
+    for i = startOffset to endOffset
+        // Lorentzian distance to historical bar i
+        float dist = 0.0
+        if i_f1_on
+            dist += math.log(1.0 + math.abs(currF1 - nz(f1_norm[i])))
+        if i_f2_on
+            dist += math.log(1.0 + math.abs(currF2 - nz(f2_norm[i])))
+        if i_f3_on
+            dist += math.log(1.0 + math.abs(currF3 - nz(f3_norm[i])))
+        if i_f4_on
+            dist += math.log(1.0 + math.abs(currF4 - nz(f4_norm[i])))
+        if i_f5_on
+            dist += math.log(1.0 + math.abs(currF5 - nz(f5_norm[i])))
+
+        // The label for this historical bar (what happened after it)
+        int histLabel = nz(trainingLabel[i])
+
+        // Insert into K-nearest if closer than the farthest current neighbor
+        if array.size(kDistances) < i_kNeighbors
+            // Still filling up the K slots — insert sorted
+            bool inserted = false
+            for j = 0 to array.size(kDistances) - 1
+                if dist < array.get(kDistances, j)
+                    array.insert(kDistances, j, dist)
+                    array.insert(kLabels, j, histLabel)
+                    inserted := true
+                    break
+            if not inserted
+                array.push(kDistances, dist)
+                array.push(kLabels, histLabel)
+        else
+            // K slots full — check if this is closer than the farthest
+            float worstDist = array.get(kDistances, array.size(kDistances) - 1)
+            if dist < worstDist
+                // Remove the farthest neighbor
+                array.pop(kDistances)
+                array.pop(kLabels)
+                // Insert in sorted position
+                bool inserted2 = false
+                for j = 0 to array.size(kDistances) - 1
+                    if dist < array.get(kDistances, j)
+                        array.insert(kDistances, j, dist)
+                        array.insert(kLabels, j, histLabel)
+                        inserted2 := true
+                        break
+                if not inserted2
+                    array.push(kDistances, dist)
+                    array.push(kLabels, histLabel)
+
+    // Tally the votes from K nearest neighbors
+    float voteSum = 0.0
+    int   nVotes  = array.size(kLabels)
+    if nVotes > 0
+        for v = 0 to nVotes - 1
+            voteSum += array.get(kLabels, v)
+        rawScore := voteSum / nVotes  // Normalized to [-1, +1]
+
+// Apply EMA smoothing to the raw score
+smoothedScore = ta.ema(rawScore, i_smoothing)
+
+// Classification: bullish if score > 0, bearish if score < 0
+int classification = smoothedScore > 0 ? 1 : smoothedScore < 0 ? -1 : 0
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FILTERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- Regime Filter: SMA(200) ---
+regimeSMA    = ta.sma(close, i_regimeLen)
+regimeBull   = close > regimeSMA
+regimeBear   = close < regimeSMA
+regimeOK     = i_useRegime ? (classification == 1 ? regimeBull : classification == -1 ? regimeBear : false) : true
+
+// --- Volatility Filter: ATR percentile ---
+atrVal       = ta.atr(i_atrLen)
+// Approximate ATR percentile rank over the training window
+// Count how many of the last N bars had a lower ATR
+atrPctRank   = ta.percentrank(atrVal, i_maxBarsBack > 200 ? 200 : i_maxBarsBack)
+volOK        = i_useVolFilter ? atrPctRank >= i_atrPctile : true
+
+// --- ADX Filter ---
+adxOK        = i_useAdxFilter ? f4_raw >= i_adxThreshold : true
+
+// --- Signal Cooldown ---
+var int barsSinceSignal = 999
+barsSinceSignal := barsSinceSignal + 1
+cooldownOK = barsSinceSignal >= i_cooldown
+
+// Combined filter
+filtersPass = regimeOK and volOK and adxOK and cooldownOK
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SIGNAL GENERATION
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Signal on classification change (or first valid classification)
+bool classChanged = classification != classification[1] and classification != 0
+
+bool buySignal  = classChanged and classification == 1 and filtersPass
+bool sellSignal = classChanged and classification == -1 and filtersPass
+
+// Reset cooldown on signal
+if buySignal or sellSignal
+    barsSinceSignal := 0
+
+// Confidence level based on vote unanimity
+// |rawScore| near 1.0 = high confidence (all neighbors agree)
+// |rawScore| near 0.0 = low confidence (split vote)
+float confidence = math.abs(smoothedScore)
+string confLevel = confidence > 0.75 ? "HIGH" : confidence > 0.4 ? "MED" : "LOW"
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// VISUAL OUTPUT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- Signal Arrows ---
+plotshape(i_showArrows and buySignal,  title="Buy Signal",  style=shape.triangleup,
+          location=location.belowbar, color=color.new(color.green, 0),
+          size=size.normal, text="ML Buy")
+
+plotshape(i_showArrows and sellSignal, title="Sell Signal", style=shape.triangledown,
+          location=location.abovebar, color=color.new(color.red, 0),
+          size=size.normal, text="ML Sell")
+
+// --- Confidence Background ---
+bgColor = classification == 1 ? color.new(color.green, 90 - math.round(confidence * 30)) :
+          classification == -1 ? color.new(color.red, 90 - math.round(confidence * 30)) :
+          color.new(color.gray, 95)
+bgcolor(i_showBG ? bgColor : na, title="Classification Background")
+
+// --- Regime SMA plot ---
+plot(i_useRegime ? regimeSMA : na, title="Regime SMA", color=color.new(color.orange, 50),
+     linewidth=2, style=plot.style_line)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// INFO TABLE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var table infoTable = na
+
+if i_showTable
+    tablePos = i_tablePos == "Top Left"     ? position.top_left :
+               i_tablePos == "Top Right"    ? position.top_right :
+               i_tablePos == "Bottom Left"  ? position.bottom_left :
+               position.bottom_right
+
+    infoTable := table.new(tablePos, 3, 9, bgcolor=color.new(color.black, 20),
+                           border_width=1, border_color=color.new(color.gray, 50),
+                           frame_width=1, frame_color=color.new(color.gray, 30))
+
+    // Header
+    table.cell(infoTable, 0, 0, "ML Lorentzian", text_color=color.white,
+               text_size=size.small, bgcolor=color.new(#1a1a2e, 0))
+    table.cell(infoTable, 1, 0, "Value", text_color=color.white,
+               text_size=size.small, bgcolor=color.new(#1a1a2e, 0))
+    table.cell(infoTable, 2, 0, "Status", text_color=color.white,
+               text_size=size.small, bgcolor=color.new(#1a1a2e, 0))
+
+    // Classification
+    classText  = classification == 1 ? "BULL" : classification == -1 ? "BEAR" : "FLAT"
+    classColor = classification == 1 ? color.green : classification == -1 ? color.red : color.gray
+    table.cell(infoTable, 0, 1, "Class", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 1, classText, text_color=classColor, text_size=size.tiny)
+    table.cell(infoTable, 2, 1, confLevel, text_color=classColor, text_size=size.tiny)
+
+    // Score
+    table.cell(infoTable, 0, 2, "Score", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 2, str.tostring(smoothedScore, "#.##"), text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 2, 2, str.tostring(math.round(confidence * 100)) + "%", text_color=color.white, text_size=size.tiny)
+
+    // Feature values (raw)
+    f1Color = f1_raw > 50 ? color.green : color.red
+    table.cell(infoTable, 0, 3, "RSI(14)", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 3, str.tostring(f1_raw, "#.#"), text_color=f1Color, text_size=size.tiny)
+    table.cell(infoTable, 2, 3, "z:" + str.tostring(f1_norm, "#.##"), text_color=color.gray, text_size=size.tiny)
+
+    f2Color = f2_raw > 0 ? color.green : color.red
+    table.cell(infoTable, 0, 4, "WT", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 4, str.tostring(f2_raw, "#.#"), text_color=f2Color, text_size=size.tiny)
+    table.cell(infoTable, 2, 4, "z:" + str.tostring(f2_norm, "#.##"), text_color=color.gray, text_size=size.tiny)
+
+    f3Color = f3_raw > 0 ? color.green : color.red
+    table.cell(infoTable, 0, 5, "CCI(20)", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 5, str.tostring(f3_raw, "#.#"), text_color=f3Color, text_size=size.tiny)
+    table.cell(infoTable, 2, 5, "z:" + str.tostring(f3_norm, "#.##"), text_color=color.gray, text_size=size.tiny)
+
+    f4Color = f4_raw > 25 ? color.green : color.orange
+    table.cell(infoTable, 0, 6, "ADX(14)", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 6, str.tostring(f4_raw, "#.#"), text_color=f4Color, text_size=size.tiny)
+    table.cell(infoTable, 2, 6, "z:" + str.tostring(f4_norm, "#.##"), text_color=color.gray, text_size=size.tiny)
+
+    f5Color = f5_raw > 50 ? color.green : color.red
+    table.cell(infoTable, 0, 7, "RSI(9)", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 7, str.tostring(f5_raw, "#.#"), text_color=f5Color, text_size=size.tiny)
+    table.cell(infoTable, 2, 7, "z:" + str.tostring(f5_norm, "#.##"), text_color=color.gray, text_size=size.tiny)
+
+    // Filters status
+    regTxt  = i_useRegime    ? (regimeOK ? "PASS" : "FAIL") : "OFF"
+    volTxt  = i_useVolFilter ? (volOK    ? "PASS" : "FAIL") : "OFF"
+    adxTxt  = i_useAdxFilter ? (adxOK    ? "PASS" : "FAIL") : "OFF"
+    filtersTxt = regTxt + " | " + volTxt + " | " + adxTxt
+    table.cell(infoTable, 0, 8, "Filters", text_color=color.white, text_size=size.tiny)
+    table.cell(infoTable, 1, 8, filtersTxt, text_color=filtersPass ? color.green : color.orange, text_size=size.tiny)
+    table.cell(infoTable, 2, 8, "R|V|A", text_color=color.gray, text_size=size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+alertcondition(buySignal,  title="ML Buy Signal",
+               message="ML Lorentzian Classification: BUY signal. Confidence: {{plot_0}}")
+alertcondition(sellSignal, title="ML Sell Signal",
+               message="ML Lorentzian Classification: SELL signal. Confidence: {{plot_0}}")
+alertcondition(buySignal or sellSignal, title="ML Any Signal",
+               message="ML Lorentzian Classification: Signal detected")
+
+// Hidden plot for alert message interpolation
+plot(confidence, title="Confidence", display=display.none)
+plot(smoothedScore, title="Smoothed Score", display=display.none)
+plot(rawScore, title="Raw Score", display=display.none)
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// END
+// ═══════════════════════════════════════════════════════════════════════════════

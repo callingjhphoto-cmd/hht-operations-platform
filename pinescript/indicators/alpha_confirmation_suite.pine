@@ -1,64 +1,73 @@
 // This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
 // © HHT Operations Platform
-// Alpha Confirmation Suite - Inspired by Trading Alpha Confirmation Indicators
-// Custom RSI with momentum lines, institutional thrust, divergence detection, S/R pivots
+// Alpha Confirmation Suite v2 - Inspired by Trading Alpha RSI + Thrust + S/R
+// 3-line RSI, orange/cluster thrust, dynamic S/R, divergence detection
 
 //@version=5
-indicator("Alpha Confirmation Suite", shorttitle="ACS", overlay=false)
+indicator("Alpha Confirmation Suite v2", shorttitle="ACS v2", overlay=false, max_lines_count=50, max_labels_count=50)
 
 // ═══════════════════════════════════════════════════
 // INPUTS
 // ═══════════════════════════════════════════════════
 
-// Alpha RSI
+// Alpha RSI (3-line system)
 rsiLen       = input.int(14, "RSI Length", minval=1, group="Alpha RSI")
-rsiFastMom   = input.int(5, "Fast Momentum Length", minval=1, group="Alpha RSI")
-rsiSlowMom   = input.int(13, "Slow Momentum Length", minval=1, group="Alpha RSI")
+rsiFastLen   = input.int(5, "Fast Momentum EMA", minval=1, group="Alpha RSI", tooltip="Fastest line — catches momentum shifts early")
+rsiMidLen    = input.int(9, "Mid Momentum EMA", minval=1, group="Alpha RSI", tooltip="Middle line — confirms fast line direction")
+rsiSlowLen   = input.int(21, "Slow Momentum EMA", minval=1, group="Alpha RSI", tooltip="Slowest line — defines the trend bias")
 
 // Divergence Detection
-divLookback  = input.int(14, "Divergence Lookback", minval=5, maxval=50, group="Divergence")
 divPivotLen  = input.int(5, "Pivot Length", minval=2, maxval=10, group="Divergence")
 
 // Institutional Thrust
 thrustLen    = input.int(14, "Thrust Period", minval=1, group="Alpha Thrust")
 thrustSmooth = input.int(3, "Thrust Smoothing", minval=1, group="Alpha Thrust")
+clusterLen   = input.int(5, "Cluster Length", minval=2, maxval=20, group="Alpha Thrust", tooltip="Consecutive strong thrust bars to trigger cluster signal")
+
+// Dynamic S/R
+srEnabled    = input.bool(true, "Show RSI S/R Zones", group="Alpha S/R")
+srLookback   = input.int(50, "S/R Lookback", minval=10, maxval=200, group="Alpha S/R")
 
 // Display
 showRSI      = input.bool(true, "Show Alpha RSI", group="Display")
 showThrust   = input.bool(true, "Show Alpha Thrust", group="Display")
 showDiv      = input.bool(true, "Show Divergences", group="Display")
+showScore    = input.bool(true, "Show Confirmation Score", group="Display")
 
 // ═══════════════════════════════════════════════════
-// ALPHA RSI (Custom RSI + Momentum Lines)
+// ALPHA RSI — 3-LINE SYSTEM
 // ═══════════════════════════════════════════════════
 
-rsiVal      = ta.rsi(close, rsiLen)
-rsiFastMA   = ta.ema(rsiVal, rsiFastMom)
-rsiSlowMA   = ta.ema(rsiVal, rsiSlowMom)
+rsiVal   = ta.rsi(close, rsiLen)
+rsiFast  = ta.ema(rsiVal, rsiFastLen)
+rsiMid   = ta.ema(rsiVal, rsiMidLen)
+rsiSlow  = ta.ema(rsiVal, rsiSlowLen)
 
-// Momentum cross signals
-rsiBullCross = ta.crossover(rsiFastMA, rsiSlowMA)
-rsiBearCross = ta.crossunder(rsiFastMA, rsiSlowMA)
+// 3-line alignment states
+bullAlign   = rsiFast > rsiMid and rsiMid > rsiSlow
+bearAlign   = rsiFast < rsiMid and rsiMid < rsiSlow
+fastMidBull = ta.crossover(rsiFast, rsiMid)
+fastMidBear = ta.crossunder(rsiFast, rsiMid)
+fastSlowBull = ta.crossover(rsiFast, rsiSlow)
+fastSlowBear = ta.crossunder(rsiFast, rsiSlow)
+midSlowBull  = ta.crossover(rsiMid, rsiSlow)
+midSlowBear  = ta.crossunder(rsiMid, rsiSlow)
 
 // RSI state
-rsiOB       = rsiVal > 70
-rsiOS       = rsiVal < 30
-rsiMidBull  = rsiVal > 50 and rsiVal <= 70
-rsiMidBear  = rsiVal < 50 and rsiVal >= 30
+rsiOB      = rsiVal > 70
+rsiOS      = rsiVal < 30
+rsiBullish = rsiVal > 50
+rsiBearish = rsiVal < 50
 
 // ═══════════════════════════════════════════════════
-// DIVERGENCE DETECTION
+// DIVERGENCE DETECTION (improved)
 // ═══════════════════════════════════════════════════
 
-// Find RSI pivots
 rsiPivotHigh = ta.pivothigh(rsiVal, divPivotLen, divPivotLen)
 rsiPivotLow  = ta.pivotlow(rsiVal, divPivotLen, divPivotLen)
-
-// Find price pivots
 pricePivotHigh = ta.pivothigh(high, divPivotLen, divPivotLen)
 pricePivotLow  = ta.pivotlow(low, divPivotLen, divPivotLen)
 
-// Track last pivot values
 var float lastRSIHigh    = na
 var float lastRSILow     = na
 var float lastPriceHigh  = na
@@ -67,158 +76,257 @@ var float prevRSIHigh    = na
 var float prevRSILow     = na
 var float prevPriceHigh  = na
 var float prevPriceLow   = na
+var int   lastHighBar    = na
+var int   lastLowBar     = na
 
 if not na(rsiPivotHigh)
     prevRSIHigh   := lastRSIHigh
     lastRSIHigh   := rsiPivotHigh
     prevPriceHigh := lastPriceHigh
     lastPriceHigh := pricePivotHigh
+    lastHighBar   := bar_index - divPivotLen
 
 if not na(rsiPivotLow)
     prevRSILow    := lastRSILow
     lastRSILow    := rsiPivotLow
     prevPriceLow  := lastPriceLow
     lastPriceLow  := pricePivotLow
+    lastLowBar    := bar_index - divPivotLen
 
-// Regular Bullish Divergence: price lower low, RSI higher low
 bullDiv = not na(rsiPivotLow) and
-          not na(prevRSILow) and
-          not na(lastPriceLow) and
-          not na(prevPriceLow) and
-          lastPriceLow < prevPriceLow and
-          lastRSILow > prevRSILow
+          not na(prevRSILow) and not na(lastPriceLow) and not na(prevPriceLow) and
+          lastPriceLow < prevPriceLow and lastRSILow > prevRSILow
 
-// Regular Bearish Divergence: price higher high, RSI lower high
 bearDiv = not na(rsiPivotHigh) and
-          not na(prevRSIHigh) and
-          not na(lastPriceHigh) and
-          not na(prevPriceHigh) and
-          lastPriceHigh > prevPriceHigh and
-          lastRSIHigh < prevRSIHigh
+          not na(prevRSIHigh) and not na(lastPriceHigh) and not na(prevPriceHigh) and
+          lastPriceHigh > prevPriceHigh and lastRSIHigh < prevRSIHigh
 
-// Hidden Bullish Divergence: price higher low, RSI lower low (trend continuation)
 hiddenBullDiv = not na(rsiPivotLow) and
-                not na(prevRSILow) and
-                not na(lastPriceLow) and
-                not na(prevPriceLow) and
-                lastPriceLow > prevPriceLow and
-                lastRSILow < prevRSILow
+                not na(prevRSILow) and not na(lastPriceLow) and not na(prevPriceLow) and
+                lastPriceLow > prevPriceLow and lastRSILow < prevRSILow
 
-// Hidden Bearish Divergence: price lower high, RSI higher high (trend continuation)
 hiddenBearDiv = not na(rsiPivotHigh) and
-                not na(prevRSIHigh) and
-                not na(lastPriceHigh) and
-                not na(prevPriceHigh) and
-                lastPriceHigh < prevPriceHigh and
-                lastRSIHigh > prevRSIHigh
+                not na(prevRSIHigh) and not na(lastPriceHigh) and not na(prevPriceHigh) and
+                lastPriceHigh < prevPriceHigh and lastRSIHigh > prevRSIHigh
 
 // ═══════════════════════════════════════════════════
-// ALPHA THRUST (Institutional Buying/Selling Pressure)
+// ALPHA THRUST — ORANGE/CLUSTER SYSTEM
 // ═══════════════════════════════════════════════════
-
-// Thrust = volume-weighted price change normalized by ATR
-// High positive thrust = strong institutional buying
-// High negative thrust = strong institutional selling
 
 priceChange  = close - close[1]
 atrNorm      = ta.atr(thrustLen)
-rawThrust    = atrNorm > 0 ? (priceChange * volume) / (atrNorm * ta.sma(volume, thrustLen)) : 0
+volNorm      = ta.sma(volume, thrustLen)
+rawThrust    = atrNorm > 0 and volNorm > 0 ? (priceChange * volume) / (atrNorm * volNorm) : 0.0
 thrust       = ta.ema(rawThrust, thrustSmooth)
 
-// Thrust levels
+// Thrust classification with orange midrange
 strongBuy    = thrust > 1.5
 moderateBuy  = thrust > 0.5 and thrust <= 1.5
-weakBuy      = thrust > 0 and thrust <= 0.5
-weakSell     = thrust < 0 and thrust >= -0.5
+weakBuy      = thrust > 0.15 and thrust <= 0.5
+neutral      = thrust >= -0.15 and thrust <= 0.15
+weakSell     = thrust < -0.15 and thrust >= -0.5
 moderateSell = thrust < -0.5 and thrust >= -1.5
 strongSell   = thrust < -1.5
 
-// Thrust color
-thrustColor  = strongBuy    ? color.new(#00E676, 0) :
-               moderateBuy  ? color.new(#69F0AE, 0) :
-               weakBuy      ? color.new(#B9F6CA, 0) :
-               weakSell     ? color.new(#FFCDD2, 0) :
-               moderateSell ? color.new(#EF9A9A, 0) :
-               strongSell   ? color.new(#FF1744, 0) :
-               color.gray
+// Cluster detection — consecutive strong thrust bars
+var int bullClusterCount = 0
+var int bearClusterCount = 0
+
+if thrust > 0.5
+    bullClusterCount += 1
+    bearClusterCount := 0
+else if thrust < -0.5
+    bearClusterCount += 1
+    bullClusterCount := 0
+else
+    bullClusterCount := 0
+    bearClusterCount := 0
+
+bullCluster = bullClusterCount >= clusterLen
+bearCluster = bearClusterCount >= clusterLen
+
+// Thrust color with orange transition zone
+thrustColor = strongBuy    ? color.new(#00E676, 0) :
+              moderateBuy  ? color.new(#69F0AE, 0) :
+              weakBuy      ? color.new(#B9F6CA, 20) :
+              neutral      ? color.new(#FF9800, 30) :
+              weakSell     ? color.new(#FFCDD2, 20) :
+              moderateSell ? color.new(#EF9A9A, 0) :
+              strongSell   ? color.new(#FF1744, 0) :
+              color.gray
 
 // ═══════════════════════════════════════════════════
-// CONFIRMATION SCORING
+// DYNAMIC S/R FROM RSI LEVELS
 // ═══════════════════════════════════════════════════
 
-// Bull confirmation score (0-5)
-bullConfirm = (rsiVal > 50 ? 1 : 0) +
-              (rsiFastMA > rsiSlowMA ? 1 : 0) +
-              (thrust > 0 ? 1 : 0) +
-              (thrust > 0.5 ? 1 : 0) +
-              (rsiVal > rsiVal[1] ? 1 : 0)
+// RSI-based S/R: mark where RSI hit 70/30 and track those price levels
+var float rsiResistance = na
+var float rsiSupport    = na
 
-// Bear confirmation score (0-5)
-bearConfirm = (rsiVal < 50 ? 1 : 0) +
-              (rsiFastMA < rsiSlowMA ? 1 : 0) +
-              (thrust < 0 ? 1 : 0) +
-              (thrust < -0.5 ? 1 : 0) +
-              (rsiVal < rsiVal[1] ? 1 : 0)
+if rsiVal >= 70
+    rsiResistance := high
+if rsiVal <= 30
+    rsiSupport := low
 
 // ═══════════════════════════════════════════════════
-// PLOTS
+// CONFIRMATION SCORING (0-7 scale)
 // ═══════════════════════════════════════════════════
 
-// Alpha RSI
+bullScore = (rsiBullish ? 1 : 0) +
+            (bullAlign ? 2 : rsiFast > rsiMid ? 1 : 0) +
+            (thrust > 0 ? 1 : 0) +
+            (thrust > 0.5 ? 1 : 0) +
+            (rsiVal > rsiVal[1] ? 1 : 0) +
+            (bullCluster ? 1 : 0)
+
+bearScore = (rsiBearish ? 1 : 0) +
+            (bearAlign ? 2 : rsiFast < rsiMid ? 1 : 0) +
+            (thrust < 0 ? 1 : 0) +
+            (thrust < -0.5 ? 1 : 0) +
+            (rsiVal < rsiVal[1] ? 1 : 0) +
+            (bearCluster ? 1 : 0)
+
+netScore = bullScore - bearScore
+
+// ═══════════════════════════════════════════════════
+// PLOTS — RSI SECTION
+// ═══════════════════════════════════════════════════
+
+// RSI line — color by OB/OS state
 rsiColor = rsiOB ? color.new(#FF1744, 0) :
            rsiOS ? color.new(#00E676, 0) :
-           rsiMidBull ? color.new(#69F0AE, 30) :
-           color.new(#EF9A9A, 30)
+           rsiBullish ? color.new(#69F0AE, 20) :
+           color.new(#EF9A9A, 20)
 
 plot(showRSI ? rsiVal : na, "Alpha RSI", rsiColor, linewidth=2)
-plot(showRSI ? rsiFastMA : na, "RSI Fast Mom", color.new(#FFD600, 50), linewidth=1)
-plot(showRSI ? rsiSlowMA : na, "RSI Slow Mom", color.new(#FF6D00, 50), linewidth=1)
+p_fast = plot(showRSI ? rsiFast : na, "RSI Fast", color.new(#FFD600, 40), linewidth=1)
+p_mid  = plot(showRSI ? rsiMid : na, "RSI Mid", color.new(#FF6D00, 40), linewidth=1)
+p_slow = plot(showRSI ? rsiSlow : na, "RSI Slow", color.new(#AA00FF, 40), linewidth=1)
+
+// Fill between fast and mid to show momentum spread
+fillColor = rsiFast > rsiMid ? color.new(#00E676, 85) : color.new(#FF1744, 85)
+fill(p_fast, p_mid, fillColor)
 
 // RSI levels
+hline(80, "Extreme OB", color.new(#FF1744, 60), hline.style_dotted)
 hline(70, "Overbought", color.new(#FF1744, 70), hline.style_dashed)
 hline(50, "Midline", color.new(#FFFFFF, 80), hline.style_dotted)
 hline(30, "Oversold", color.new(#00E676, 70), hline.style_dashed)
-
-// Alpha Thrust (histogram at bottom)
-plot(showThrust ? thrust * 20 + 50 : na, "Alpha Thrust", thrustColor,
-     style=plot.style_columns, linewidth=2)
-
-// OB/OS background
-bgcolor(rsiOB ? color.new(#FF1744, 92) : rsiOS ? color.new(#00E676, 92) : na)
+hline(20, "Extreme OS", color.new(#00E676, 60), hline.style_dotted)
 
 // ═══════════════════════════════════════════════════
-// DIVERGENCE MARKERS
+// PLOTS — THRUST HISTOGRAM (scaled to RSI pane)
+// ═══════════════════════════════════════════════════
+
+// Scale thrust to 0-100 range to fit RSI pane (neutral at 50)
+thrustScaled = math.max(0, math.min(100, thrust * 15 + 50))
+plot(showThrust ? thrustScaled : na, "Alpha Thrust", thrustColor,
+     style=plot.style_columns, linewidth=1)
+
+// ═══════════════════════════════════════════════════
+// PLOTS — OB/OS BACKGROUND
+// ═══════════════════════════════════════════════════
+
+bgcolor(rsiOB ? color.new(#FF1744, 92) : rsiOS ? color.new(#00E676, 92) : na)
+
+// Cluster background highlight
+bgcolor(bullCluster ? color.new(#00E676, 88) : bearCluster ? color.new(#FF1744, 88) : na)
+
+// ═══════════════════════════════════════════════════
+// PLOTS — DIVERGENCE MARKERS
 // ═══════════════════════════════════════════════════
 
 plotshape(showDiv and bullDiv, "Bullish Divergence",
           shape.labelup, location.bottom, color.new(#00E676, 0),
-          text="BULL\nDIV", textcolor=color.white, size=size.small)
+          text="BULL\nDIV", textcolor=color.white, size=size.small, offset=-divPivotLen)
 
 plotshape(showDiv and bearDiv, "Bearish Divergence",
           shape.labeldown, location.top, color.new(#FF1744, 0),
-          text="BEAR\nDIV", textcolor=color.white, size=size.small)
+          text="BEAR\nDIV", textcolor=color.white, size=size.small, offset=-divPivotLen)
 
 plotshape(showDiv and hiddenBullDiv, "Hidden Bull Div",
-          shape.triangleup, location.bottom, color.new(#00E676, 40), size=size.tiny)
+          shape.triangleup, location.bottom, color.new(#00E676, 40),
+          size=size.tiny, offset=-divPivotLen)
 
 plotshape(showDiv and hiddenBearDiv, "Hidden Bear Div",
-          shape.triangledown, location.top, color.new(#FF1744, 40), size=size.tiny)
+          shape.triangledown, location.top, color.new(#FF1744, 40),
+          size=size.tiny, offset=-divPivotLen)
 
-// Momentum cross markers
-plotshape(rsiBullCross, "RSI Bull Cross", shape.circle, location.bottom,
-          color.new(#00E676, 0), size=size.tiny)
-plotshape(rsiBearCross, "RSI Bear Cross", shape.circle, location.top,
-          color.new(#FF1744, 0), size=size.tiny)
+// ═══════════════════════════════════════════════════
+// PLOTS — SIGNAL MARKERS
+// ═══════════════════════════════════════════════════
+
+// 3-line alignment signals
+plotshape(fastMidBull and rsiOS, "Fast×Mid Bull (OS)", shape.circle,
+          location.bottom, color.new(#00E676, 0), size=size.tiny)
+plotshape(fastMidBear and rsiOB, "Fast×Mid Bear (OB)", shape.circle,
+          location.top, color.new(#FF1744, 0), size=size.tiny)
+
+// Full alignment shift signals (strongest)
+plotshape(bullAlign and not bullAlign[1], "Bull Alignment", shape.diamond,
+          location.bottom, color.new(#00E676, 0), size=size.small)
+plotshape(bearAlign and not bearAlign[1], "Bear Alignment", shape.diamond,
+          location.top, color.new(#FF1744, 0), size=size.small)
+
+// Cluster thrust signals
+plotshape(bullCluster and not bullCluster[1], "Bull Thrust Cluster",
+          shape.arrowup, location.bottom, color.new(#FFD600, 0),
+          text="CLUSTER", textcolor=color.new(#FFD600, 0), size=size.small)
+plotshape(bearCluster and not bearCluster[1], "Bear Thrust Cluster",
+          shape.arrowdown, location.top, color.new(#FFD600, 0),
+          text="CLUSTER", textcolor=color.new(#FFD600, 0), size=size.small)
+
+// ═══════════════════════════════════════════════════
+// INFO TABLE — CONFIRMATION SCORE
+// ═══════════════════════════════════════════════════
+
+if showScore and barstate.islast
+    var table scoreTable = table.new(position.top_right, 2, 8, border_width=1)
+
+    scoreColor = netScore >= 4 ? color.new(#00E676, 0) :
+                 netScore >= 2 ? color.new(#69F0AE, 0) :
+                 netScore <= -4 ? color.new(#FF1744, 0) :
+                 netScore <= -2 ? color.new(#EF9A9A, 0) :
+                 color.new(#FF9800, 0)
+
+    table.cell(scoreTable, 0, 0, "ACS v2", text_color=color.white, bgcolor=color.new(#263238, 0), text_size=size.small)
+    table.cell(scoreTable, 1, 0, str.tostring(netScore, "#"), text_color=color.white, bgcolor=scoreColor, text_size=size.small)
+
+    table.cell(scoreTable, 0, 1, "RSI", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(scoreTable, 1, 1, str.tostring(rsiVal, "#.#"), text_color=rsiOB ? color.red : rsiOS ? color.lime : color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 2, "Align", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(scoreTable, 1, 2, bullAlign ? "BULL" : bearAlign ? "BEAR" : "MIXED", text_color=bullAlign ? color.lime : bearAlign ? color.red : color.orange, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 3, "Thrust", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(scoreTable, 1, 3, str.tostring(thrust, "#.##"), text_color=thrust > 0.5 ? color.lime : thrust < -0.5 ? color.red : color.orange, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 4, "Cluster", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(scoreTable, 1, 4, bullCluster ? "BUY " + str.tostring(bullClusterCount) : bearCluster ? "SELL " + str.tostring(bearClusterCount) : "—", text_color=bullCluster ? color.lime : bearCluster ? color.red : color.gray, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 5, "Bull", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(scoreTable, 1, 5, str.tostring(bullScore) + "/7", text_color=color.lime, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 6, "Bear", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(scoreTable, 1, 6, str.tostring(bearScore) + "/7", text_color=color.red, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(scoreTable, 0, 7, "S/R", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    srText = (not na(rsiResistance) ? "R:" + str.tostring(rsiResistance, format.mintick) : "") + (not na(rsiSupport) ? " S:" + str.tostring(rsiSupport, format.mintick) : "")
+    table.cell(scoreTable, 1, 7, srText != "" ? srText : "—", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
 
 // ═══════════════════════════════════════════════════
 // ALERTS
 // ═══════════════════════════════════════════════════
 
-alertcondition(bullDiv, "Bullish RSI Divergence", "Bullish divergence detected — price lower low but RSI higher low")
-alertcondition(bearDiv, "Bearish RSI Divergence", "Bearish divergence detected — price higher high but RSI lower high")
-alertcondition(rsiBullCross, "RSI Momentum Bull Cross", "RSI fast momentum crossed above slow — bullish momentum shift")
-alertcondition(rsiBearCross, "RSI Momentum Bear Cross", "RSI fast momentum crossed below slow — bearish momentum shift")
-alertcondition(strongBuy, "Strong Institutional Buying", "Alpha Thrust shows strong institutional buying pressure")
-alertcondition(strongSell, "Strong Institutional Selling", "Alpha Thrust shows strong institutional selling pressure")
-alertcondition(bullConfirm >= 4, "Full Bull Confirmation", "4+ bullish confirmations — high probability setup")
-alertcondition(bearConfirm >= 4, "Full Bear Confirmation", "4+ bearish confirmations — high probability setup")
+alertcondition(bullDiv, "Bullish RSI Divergence", "Bullish divergence — price lower low, RSI higher low")
+alertcondition(bearDiv, "Bearish RSI Divergence", "Bearish divergence — price higher high, RSI lower high")
+alertcondition(hiddenBullDiv, "Hidden Bullish Divergence", "Hidden bullish divergence — trend continuation signal")
+alertcondition(hiddenBearDiv, "Hidden Bearish Divergence", "Hidden bearish divergence — trend continuation signal")
+alertcondition(bullAlign and not bullAlign[1], "Full Bull Alignment", "All 3 RSI lines aligned bullish — strong momentum")
+alertcondition(bearAlign and not bearAlign[1], "Full Bear Alignment", "All 3 RSI lines aligned bearish — strong momentum")
+alertcondition(bullCluster and not bullCluster[1], "Bull Thrust Cluster", "Consecutive strong institutional buying detected")
+alertcondition(bearCluster and not bearCluster[1], "Bear Thrust Cluster", "Consecutive strong institutional selling detected")
+alertcondition(netScore >= 5, "Strong Bull Confirmation", "5+ net bull score — high probability long setup")
+alertcondition(netScore <= -5, "Strong Bear Confirmation", "5+ net bear score — high probability short setup")
+alertcondition(fastMidBull and rsiOS, "Oversold Momentum Cross", "Fast×Mid bullish cross in oversold zone — potential reversal")
+alertcondition(fastMidBear and rsiOB, "Overbought Momentum Cross", "Fast×Mid bearish cross in overbought zone — potential reversal")

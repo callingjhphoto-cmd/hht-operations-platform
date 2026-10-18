@@ -1,0 +1,200 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0
+// © HHT Operations Platform
+// Volatility Regime Detector — classifies market into regimes using multiple methods
+// ADX + Choppiness Index + Hurst Exponent proxy + RWI + ATR regime bands
+
+//@version=5
+indicator("Volatility Regime Detector", shorttitle="Vol Regime", overlay=false)
+
+// ═══════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════
+
+// ADX
+adxLen      = input.int(14, "ADX Length", minval=5, maxval=50, group="ADX")
+adxTrend    = input.float(25.0, "ADX Trend Threshold", minval=10.0, maxval=50.0, group="ADX")
+adxStrong   = input.float(40.0, "ADX Strong Trend", minval=25.0, maxval=60.0, group="ADX")
+
+// Choppiness Index
+chopLen     = input.int(14, "Choppiness Length", minval=5, maxval=50, group="Choppiness")
+chopThresh  = input.float(61.8, "Chop Threshold", minval=50.0, maxval=80.0, group="Choppiness", tooltip="Above = choppy/ranging, Below = trending")
+
+// Random Walk Index
+rwiLen      = input.int(14, "RWI Length", minval=5, maxval=50, group="RWI")
+rwiThresh   = input.float(1.0, "RWI Trend Threshold", minval=0.5, maxval=2.0, step=0.1, group="RWI")
+
+// Volatility
+atrLen      = input.int(14, "ATR Length", minval=5, maxval=50, group="Volatility")
+volRegimeLen = input.int(50, "Vol Regime Lookback", minval=20, maxval=200, group="Volatility")
+
+// Display
+showADX     = input.bool(true, "Show ADX", group="Display")
+showChop    = input.bool(false, "Show Choppiness", group="Display")
+showRWI     = input.bool(false, "Show RWI", group="Display")
+showComposite = input.bool(true, "Show Composite Score", group="Display")
+
+// ═══════════════════════════════════════════════════
+// ADX CALCULATION
+// ═══════════════════════════════════════════════════
+
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+
+adxTrending = adxVal > adxTrend
+adxStrongTrend = adxVal > adxStrong
+adxBullTrend = diPlus > diMinus
+adxBearTrend = diMinus > diPlus
+
+// ═══════════════════════════════════════════════════
+// CHOPPINESS INDEX
+// ═══════════════════════════════════════════════════
+
+atrSum = math.sum(ta.atr(1), chopLen)
+highLow = ta.highest(high, chopLen) - ta.lowest(low, chopLen)
+chop = highLow > 0 ? 100.0 * math.log10(atrSum / highLow) / math.log10(chopLen) : 50.0
+
+isChoppy = chop > chopThresh
+
+// ═══════════════════════════════════════════════════
+// RANDOM WALK INDEX
+// ═══════════════════════════════════════════════════
+
+rwiHigh = (high - ta.lowest(low, rwiLen)) / (ta.atr(rwiLen) * math.sqrt(rwiLen))
+rwiLow  = (ta.highest(high, rwiLen) - low) / (ta.atr(rwiLen) * math.sqrt(rwiLen))
+rwiMax  = math.max(rwiHigh, rwiLow)
+
+rwiTrending = rwiMax > rwiThresh
+
+// ═══════════════════════════════════════════════════
+// HURST EXPONENT PROXY (simplified R/S analysis)
+// ═══════════════════════════════════════════════════
+
+// Approximate Hurst via ratio of directional move to total movement
+logReturns = math.log(close / close[1])
+directional = math.abs(math.sum(logReturns, volRegimeLen))
+totalMove   = math.sum(math.abs(logReturns), volRegimeLen)
+hurstProxy  = totalMove > 0 ? directional / totalMove : 0.5
+
+// H > 0.5 = trending (persistent), H < 0.5 = mean reverting, H = 0.5 = random
+isTrending    = hurstProxy > 0.55
+isMeanRev     = hurstProxy < 0.35
+isRandom      = hurstProxy >= 0.35 and hurstProxy <= 0.55
+
+// ═══════════════════════════════════════════════════
+// VOLATILITY REGIME
+// ═══════════════════════════════════════════════════
+
+atrCurrent = ta.atr(atrLen)
+atrAvg     = ta.sma(atrCurrent, volRegimeLen)
+atrStd     = ta.stdev(atrCurrent, volRegimeLen)
+
+volLow    = atrCurrent < atrAvg - atrStd * 0.5
+volNormal = atrCurrent >= atrAvg - atrStd * 0.5 and atrCurrent <= atrAvg + atrStd * 0.5
+volHigh   = atrCurrent > atrAvg + atrStd * 0.5
+volExtreme = atrCurrent > atrAvg + atrStd * 1.5
+
+// ═══════════════════════════════════════════════════
+// COMPOSITE REGIME SCORE (-100 to +100)
+// ═══════════════════════════════════════════════════
+
+// Positive = trending, Negative = ranging/choppy
+adxScore  = (adxVal - adxTrend) / (adxStrong - adxTrend) * 30.0
+chopScore = (chopThresh - chop) / chopThresh * 30.0
+rwiScore  = (rwiMax - rwiThresh) / rwiThresh * 20.0
+hurstScore = (hurstProxy - 0.5) * 40.0
+
+composite = math.max(-100.0, math.min(100.0, adxScore + chopScore + rwiScore + hurstScore))
+
+// Regime classification
+regime = composite > 30 ? 3 :
+         composite > 10 ? 2 :
+         composite > -10 ? 1 :
+         composite > -30 ? 0 :
+         -1
+
+regimeText = regime == 3 ? "STRONG TREND" :
+             regime == 2 ? "TRENDING" :
+             regime == 1 ? "TRANSITIONING" :
+             regime == 0 ? "RANGING" :
+             "CHOPPY"
+
+regimeColor = regime == 3 ? color.new(#00E676, 0) :
+              regime == 2 ? color.new(#69F0AE, 0) :
+              regime == 1 ? color.new(#FFD600, 0) :
+              regime == 0 ? color.new(#FF9800, 0) :
+              color.new(#FF1744, 0)
+
+// ═══════════════════════════════════════════════════
+// PLOTS
+// ═══════════════════════════════════════════════════
+
+// Composite score
+plot(showComposite ? composite : na, "Composite Regime", regimeColor, linewidth=2)
+plot(showComposite ? ta.ema(composite, 5) : na, "Composite Signal", color.new(#FFFFFF, 60), linewidth=1)
+hline(showComposite ? 30 : na, "Trend Zone", color.new(#00E676, 70), hline.style_dashed)
+hline(showComposite ? 0 : na, "Neutral", color.new(#FFFFFF, 80), hline.style_dotted)
+hline(showComposite ? -30 : na, "Chop Zone", color.new(#FF1744, 70), hline.style_dashed)
+
+// ADX
+plot(showADX ? adxVal : na, "ADX", color.new(#00BCD4, 0), linewidth=2)
+plot(showADX ? diPlus : na, "+DI", color.new(#00E676, 40), linewidth=1)
+plot(showADX ? diMinus : na, "-DI", color.new(#FF1744, 40), linewidth=1)
+
+// Choppiness
+plot(showChop ? chop : na, "Choppiness", color.new(#FF9800, 0), linewidth=2)
+
+// RWI
+plot(showRWI ? rwiHigh : na, "RWI High", color.new(#00E676, 30), linewidth=1)
+plot(showRWI ? rwiLow : na, "RWI Low", color.new(#FF1744, 30), linewidth=1)
+
+// Background regime shading
+bgcolor(regime == 3 ? color.new(#00E676, 92) :
+        regime == 2 ? color.new(#69F0AE, 94) :
+        regime == 0 ? color.new(#FF9800, 94) :
+        regime == -1 ? color.new(#FF1744, 92) : na)
+
+// Volatility regime dots
+plotshape(volExtreme, "Extreme Volatility", shape.xcross,
+          location.bottom, color.new(#FF1744, 0), size=size.tiny)
+plotshape(volLow and not volLow[1], "Low Vol Start", shape.diamond,
+          location.top, color.new(#FFD600, 0), size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// INFO TABLE
+// ═══════════════════════════════════════════════════
+
+if barstate.islast
+    var table regTbl = table.new(position.top_right, 2, 7, border_width=1)
+
+    table.cell(regTbl, 0, 0, "REGIME", text_color=color.white, bgcolor=color.new(#263238, 0), text_size=size.small)
+    table.cell(regTbl, 1, 0, regimeText, text_color=regimeColor, bgcolor=color.new(#263238, 0), text_size=size.small)
+
+    table.cell(regTbl, 0, 1, "ADX", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(regTbl, 1, 1, str.tostring(adxVal, "#.#"), text_color=adxTrending ? color.lime : color.gray, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(regTbl, 0, 2, "Chop", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(regTbl, 1, 2, str.tostring(chop, "#.#"), text_color=isChoppy ? color.orange : color.lime, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(regTbl, 0, 3, "RWI", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(regTbl, 1, 3, str.tostring(rwiMax, "#.##"), text_color=rwiTrending ? color.lime : color.gray, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(regTbl, 0, 4, "Hurst", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(regTbl, 1, 4, str.tostring(hurstProxy, "#.###"), text_color=isTrending ? color.lime : isMeanRev ? color.orange : color.gray, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(regTbl, 0, 5, "Volatility", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    volText = volExtreme ? "EXTREME" : volHigh ? "HIGH" : volNormal ? "NORMAL" : "LOW"
+    volClr  = volExtreme ? color.red : volHigh ? color.orange : volNormal ? color.white : color.new(#FFD600, 0)
+    table.cell(regTbl, 1, 5, volText, text_color=volClr, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+    table.cell(regTbl, 0, 6, "Score", text_color=color.white, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+    table.cell(regTbl, 1, 6, str.tostring(composite, "#.#"), text_color=regimeColor, bgcolor=color.new(#37474F, 0), text_size=size.tiny)
+
+// ═══════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════
+
+alertcondition(regime == 3 and regime[1] != 3, "Strong Trend Started", "Market entered strong trending regime")
+alertcondition(regime == -1 and regime[1] != -1, "Choppy Market", "Market entered choppy/ranging regime — avoid trend-following")
+alertcondition(regime >= 2 and regime[1] < 2, "Trending Regime", "Market shifting to trending regime — momentum strategies favored")
+alertcondition(regime <= 0 and regime[1] > 0, "Ranging Regime", "Market shifting to ranging regime — mean reversion strategies favored")
+alertcondition(volExtreme and not volExtreme[1], "Extreme Volatility", "Extreme volatility detected — reduce position size")
+alertcondition(volLow and not volLow[1], "Low Volatility", "Low volatility — potential squeeze/breakout setup forming")
